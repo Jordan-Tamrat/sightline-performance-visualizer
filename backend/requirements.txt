@@ -1,0 +1,12 @@
+django
+djangorestframework
+celery
+redis
+psycopg2-binary
+playwright
+google-generativeai
+gunicorn
+django-cors-headers
+django-celery-results
+requests
+Pillow

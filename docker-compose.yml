@@ -1,0 +1,74 @@
+version: '3.8'
+
+services:
+  backend:
+    build: ./backend
+    command: sh -c "python manage.py makemigrations && python manage.py migrate && python manage.py runserver 0.0.0.0:8000"
+    volumes:
+      - ./backend:/app
+    ports:
+      - "8000:8000"
+    environment:
+      - DEBUG=1
+      - SECRET_KEY=django-insecure-secret-key
+      - DJANGO_ALLOWED_HOSTS=localhost 127.0.0.1 [::1] backend
+      - CELERY_BROKER_URL=redis://redis:6379/0
+      - CELERY_RESULT_BACKEND=redis://redis:6379/0
+      - DATABASE_NAME=sightline
+      - DATABASE_USER=sightline
+      - DATABASE_PASSWORD=sightline
+      - DATABASE_HOST=db
+      - DATABASE_PORT=5432
+      - GEMINI_API_KEY=${GEMINI_API_KEY}
+    depends_on:
+      - db
+      - redis
+
+  celery_worker:
+    build: ./backend
+    command: celery -A sightline worker --loglevel=info
+    volumes:
+      - ./backend:/app
+    environment:
+      - DEBUG=1
+      - SECRET_KEY=django-insecure-secret-key
+      - CELERY_BROKER_URL=redis://redis:6379/0
+      - CELERY_RESULT_BACKEND=redis://redis:6379/0
+      - DATABASE_NAME=sightline
+      - DATABASE_USER=sightline
+      - DATABASE_PASSWORD=sightline
+      - DATABASE_HOST=db
+      - DATABASE_PORT=5432
+      - GEMINI_API_KEY=${GEMINI_API_KEY}
+    shm_size: '2gb'
+    depends_on:
+      - backend
+      - redis
+
+  db:
+    image: postgres:15-alpine
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    environment:
+      - POSTGRES_DB=sightline
+      - POSTGRES_USER=sightline
+      - POSTGRES_PASSWORD=sightline
+
+  redis:
+    image: redis:7-alpine
+
+  frontend:
+    build: ./frontend
+    command: npm run dev
+    volumes:
+      - ./frontend:/app
+      - /app/node_modules
+    ports:
+      - "3000:3000"
+    environment:
+      - NEXT_PUBLIC_API_URL=http://localhost:8000
+    depends_on:
+      - backend
+
+volumes:
+  postgres_data:
