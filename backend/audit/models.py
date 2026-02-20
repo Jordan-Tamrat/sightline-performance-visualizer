@@ -1,6 +1,9 @@
 from django.db import models
 
 class Report(models.Model):
+    class Meta:
+        app_label = 'audit'
+
     STATUS_CHOICES = (
         ('pending', 'Pending'),
         ('processing', 'Processing'),
