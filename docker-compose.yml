@@ -40,6 +40,7 @@ services:
       - DATABASE_HOST=db
       - DATABASE_PORT=5432
       - GEMINI_API_KEY=${GEMINI_API_KEY}
+      - DJANGO_ALLOWED_HOSTS=localhost 127.0.0.1 [::1] backend
     shm_size: '2gb'
     depends_on:
       - backend
