@@ -170,23 +170,24 @@ def run_audit(self, report_id):
         # 1. Playwright Screenshot
         screenshot_path, executable_path = take_screenshot(url, report_id)
         
-        # Save screenshot
+        # Save screenshot immediately to DB so frontend progress UI updates
         with open(screenshot_path, 'rb') as f:
-            report.screenshot.save(f"screenshot_{report_id}.png", File(f), save=False)
+            report.screenshot.save(f"screenshot_{report_id}.png", File(f), save=True)
 
         # 2. Lighthouse Audit
         lighthouse_data, lighthouse_report_path = run_lighthouse(url, executable_path, report_id)
         
-        # Extract score
+        # Extract score and save to DB immediately to trigger frontend Stage 3
         performance_score = int(lighthouse_data.get('categories', {}).get('performance', {}).get('score', 0) * 100)
         report.lighthouse_json = lighthouse_data
         report.performance_score = performance_score
+        report.save(update_fields=['lighthouse_json', 'performance_score'])
 
         # 3. AI Summary
         report.ai_summary = generate_ai_summary(lighthouse_data, url)
 
         report.status = 'completed'
-        report.save()
+        report.save(update_fields=['ai_summary', 'status'])
 
         # Cleanup
         if screenshot_path and os.path.exists(screenshot_path):
