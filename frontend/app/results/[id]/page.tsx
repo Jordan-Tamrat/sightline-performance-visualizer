@@ -10,6 +10,8 @@ import ThemeToggle from '@/components/ThemeToggle';
 import Gauge from '../../../components/Gauge';
 import ScoreGrid from '@/components/ScoreGrid';
 import WebVitalsGrid from '@/components/WebVitalsGrid';
+import NetworkWaterfall from '@/components/NetworkWaterfall';
+import PerformanceSimulator from '@/components/PerformanceSimulator';
 
 interface Issue {
   title: string;
@@ -258,11 +260,29 @@ export default function ResultPage() {
             <WebVitalsGrid audits={report.lighthouse_json?.audits} />
           </motion.div>
 
-          {/* AI Summary */}
+          {/* Interactive Network Waterfall */}
+          <motion.div
+            initial={{ opacity: 0, y: 40 }}
+            animate={{ opacity: hasRevealed ? 1 : 0, y: hasRevealed ? 0 : 40 }}
+            transition={{ duration: 0.6, delay: 0.5 }}
+          >
+            <NetworkWaterfall audits={report.lighthouse_json?.audits} />
+          </motion.div>
+
+          {/* Performance Simulator */}
           <motion.div
             initial={{ opacity: 0, y: 40 }}
             animate={{ opacity: hasRevealed ? 1 : 0, y: hasRevealed ? 0 : 40 }}
             transition={{ duration: 0.6, delay: 0.6 }}
+          >
+            <PerformanceSimulator baseScore={report.performance_score || 0} />
+          </motion.div>
+
+          {/* AI Summary */}
+          <motion.div
+            initial={{ opacity: 0, y: 40 }}
+            animate={{ opacity: hasRevealed ? 1 : 0, y: hasRevealed ? 0 : 40 }}
+            transition={{ duration: 0.6, delay: 0.7 }}
             className="w-full bg-zinc-50 dark:bg-zinc-900/50 border border-zinc-200 dark:border-zinc-800 rounded-2xl p-8 shadow-sm"
           >
             <h3 className="text-xl font-semibold mb-6 flex items-center gap-2">
