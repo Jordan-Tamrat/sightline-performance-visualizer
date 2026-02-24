@@ -293,11 +293,11 @@ export default function NetworkWaterfall({ audits }: NetworkWaterfallProps) {
                                         animate={{ opacity: 1 }}
                                         exit={{ opacity: 0 }}
                                         key={`${item.url}-${index}`}
-                                        onMouseEnter={() => setHoveredItem(item.url)}
+                                        onMouseEnter={() => setHoveredItem(`${item.url}-${index}`)}
                                         onMouseLeave={() => setHoveredItem(null)}
                                         className={clsx(
                                             "flex border-b border-zinc-100 dark:border-zinc-800/30 z-10 group transition-colors hover:bg-zinc-50/50 dark:hover:bg-zinc-800/20",
-                                            hoveredItem === item.url && "relative z-[60]"
+                                            hoveredItem === `${item.url}-${index}` && "relative z-[60]"
                                         )}
                                     >
                                         {/* Left Panel: Fixed width */}
@@ -333,7 +333,7 @@ export default function NetworkWaterfall({ audits }: NetworkWaterfallProps) {
 
                                             {/* Tooltip — smart anchoring */}
                                             <AnimatePresence>
-                                                {hoveredItem === item.url && (
+                                                {hoveredItem === `${item.url}-${index}` && (
                                                     <motion.div
                                                         initial={{ opacity: 0, scale: 0.95 }}
                                                         animate={{ opacity: 1, scale: 1 }}

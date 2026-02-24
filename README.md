@@ -7,7 +7,7 @@ Sightline is a full-stack web application that generates comprehensive performan
 ## 🚀 Features
 
 *   **Automated Audits**: Runs Google Lighthouse in a headless Docker container.
-*   **AI-Powered Insights**: Uses Google Gemini 2.0 Flash to analyze performance bottlenecks and explain their business impact.
+*   **AI-Powered Insights**: Uses Google Gemini 2.5 Flash model to analyze performance bottlenecks and explain their business impact.
 *   **Visual Timeline**: Displays a frame-by-frame filmstrip of the page load process.
 *   **Performance Score**: Real-time gauge visualization of the overall performance score.
 *   **Full-Stack Architecture**: Built with Django (Backend), Next.js (Frontend), Celery (Async Tasks), and Redis.

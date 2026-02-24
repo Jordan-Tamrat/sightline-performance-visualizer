@@ -1,7 +1,7 @@
 'use client';
 
 import { motion } from 'framer-motion';
-import { Activity, Clock, Layout, Zap, AlertCircle, CheckCircle } from 'lucide-react';
+import { Activity, Layout, Zap, AlertCircle, CheckCircle } from 'lucide-react';
 import clsx from 'clsx';
 
 interface AuditData {
@@ -16,16 +16,54 @@ interface WebVitalsGridProps {
     audits: {
         'largest-contentful-paint'?: AuditData;
         'cumulative-layout-shift'?: AuditData;
+        'interaction-to-next-paint'?: AuditData;
         'total-blocking-time'?: AuditData;
-        'first-contentful-paint'?: AuditData;
-        'speed-index'?: AuditData;
     };
 }
+
+type Severity = 'good' | 'needs-improvement' | 'poor';
+
+/**
+ * Calculates severity based on official Google Core Web Vitals thresholds (2024).
+ */
+const getSeverity = (id: string, value: number, isTBTFallback?: boolean): Severity => {
+    if (isTBTFallback) {
+        // TBT Lab thresholds: Good <= 200ms, NI <= 600ms
+        if (value <= 200) return 'good';
+        if (value <= 600) return 'needs-improvement';
+        return 'poor';
+    }
+
+    switch (id) {
+        case 'lcp':
+            // Thresholds: Good <= 2.5s (2500ms), NI <= 4.0s (4000ms)
+            if (value <= 2500) return 'good';
+            if (value <= 4000) return 'needs-improvement';
+            return 'poor';
+        case 'inp':
+            // Thresholds: Good <= 200ms, NI <= 500ms
+            if (value <= 200) return 'good';
+            if (value <= 500) return 'needs-improvement';
+            return 'poor';
+        case 'cls':
+            // Thresholds: Good <= 0.1, NI <= 0.25
+            if (value <= 0.1) return 'good';
+            if (value <= 0.25) return 'needs-improvement';
+            return 'poor';
+        default:
+            return 'poor';
+    }
+};
 
 export default function WebVitalsGrid({ audits }: WebVitalsGridProps) {
     if (!audits) return null;
 
-    // Map Lighthouse audits to our Vital cards
+    // INP is often missing in simulated Lab flow; we fallback to TBT as the standard interactivity proxy
+    const inpAudit = audits['interaction-to-next-paint'];
+    const tbtAudit = audits['total-blocking-time'];
+    const isTBTFallback = !inpAudit && !!tbtAudit;
+    const finalInteractivityData = inpAudit || tbtAudit;
+
     const vitals = [
         {
             id: 'lcp',
@@ -36,28 +74,23 @@ export default function WebVitalsGrid({ audits }: WebVitalsGridProps) {
             description: 'Render time of the largest image or text block.'
         },
         {
+            id: 'inp',
+            title: isTBTFallback ? 'Total Blocking Time (INP Proxy)' : 'Interaction to Next Paint',
+            short: isTBTFallback ? 'TBT' : 'INP',
+            data: finalInteractivityData,
+            icon: Zap,
+            isFallback: isTBTFallback,
+            description: isTBTFallback
+                ? 'Sum of all periods between FCP and Time to Interactive.'
+                : 'Measures how quickly the page responds to user interactions.'
+        },
+        {
             id: 'cls',
             title: 'Cumulative Layout Shift',
             short: 'CLS',
             data: audits['cumulative-layout-shift'],
             icon: Layout,
             description: 'Movement of visible elements within the viewport.'
-        },
-        {
-            id: 'tbt',
-            title: 'Total Blocking Time',
-            short: 'TBT',
-            data: audits['total-blocking-time'],
-            icon: Clock,
-            description: 'Sum of periods where main thread is blocked.'
-        },
-        {
-            id: 'fcp',
-            title: 'First Contentful Paint',
-            short: 'FCP',
-            data: audits['first-contentful-paint'],
-            icon: Zap,
-            description: 'First time text or image is painted.'
         }
     ];
 
@@ -68,16 +101,11 @@ export default function WebVitalsGrid({ audits }: WebVitalsGridProps) {
                 <h3 className="text-xl font-semibold">Core Web Vitals</h3>
             </div>
 
-            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
-                {vitals.map((vital, index) => {
+            <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                {vitals.map((vital: any, index) => {
                     if (!vital.data) return null;
 
-                    const score = vital.data.score ?? 0;
-                    let severity: 'good' | 'needs-improvement' | 'poor' = 'poor';
-
-                    if (score >= 0.9) severity = 'good';
-                    else if (score >= 0.5) severity = 'needs-improvement';
-
+                    const severity = getSeverity(vital.id, vital.data.numericValue, vital.isFallback);
                     const Icon = vital.icon;
 
                     return (
@@ -146,6 +174,7 @@ export default function WebVitalsGrid({ audits }: WebVitalsGridProps) {
         </div>
     );
 }
+
 // Image icon for LCP
 const ImageLayer = ({ className }: { className?: string }) => (
     <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className={className}>
