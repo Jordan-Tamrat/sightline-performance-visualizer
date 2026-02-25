@@ -10,6 +10,9 @@ interface AuditData {
     displayValue: string;
     score: number | null;
     numericValue: number;
+    details?: {
+        items?: { data: string; timing: number }[];
+    };
 }
 
 interface WebVitalsGridProps {
@@ -59,8 +62,8 @@ export default function WebVitalsGrid({ audits }: WebVitalsGridProps) {
     if (!audits) return null;
 
     // INP is often missing in simulated Lab flow; we fallback to TBT as the standard interactivity proxy
-    const inpAudit = audits['interaction-to-next-paint'];
-    const tbtAudit = audits['total-blocking-time'];
+    const inpAudit = audits['interaction-to-next-paint'] as AuditData | undefined;
+    const tbtAudit = audits['total-blocking-time'] as AuditData | undefined;
     const isTBTFallback = !inpAudit && !!tbtAudit;
     const finalInteractivityData = inpAudit || tbtAudit;
 
@@ -69,7 +72,7 @@ export default function WebVitalsGrid({ audits }: WebVitalsGridProps) {
             id: 'lcp',
             title: 'Largest Contentful Paint',
             short: 'LCP',
-            data: audits['largest-contentful-paint'],
+            data: audits['largest-contentful-paint'] as AuditData | undefined,
             icon: ImageLayer,
             description: 'Render time of the largest image or text block.'
         },
@@ -88,7 +91,7 @@ export default function WebVitalsGrid({ audits }: WebVitalsGridProps) {
             id: 'cls',
             title: 'Cumulative Layout Shift',
             short: 'CLS',
-            data: audits['cumulative-layout-shift'],
+            data: audits['cumulative-layout-shift'] as AuditData | undefined,
             icon: Layout,
             description: 'Movement of visible elements within the viewport.'
         }
@@ -102,7 +105,7 @@ export default function WebVitalsGrid({ audits }: WebVitalsGridProps) {
             </div>
 
             <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-                {vitals.map((vital: any, index) => {
+                {vitals.map((vital, index) => {
                     if (!vital.data) return null;
 
                     const severity = getSeverity(vital.id, vital.data.numericValue, vital.isFallback);

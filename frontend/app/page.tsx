@@ -23,9 +23,10 @@ export default function Home() {
       const apiUrl = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000';
       const response = await axios.post(`${apiUrl}/api/reports/`, { url });
       router.push(`/results/${response.data.id}`);
-    } catch (err: any) {
+    } catch (err: unknown) {
       console.error('Error creating report:', err);
-      setError(err.message || 'Failed to connect to the server.');
+      const errorMessage = err instanceof Error ? err.message : 'Failed to connect to the server.';
+      setError(errorMessage);
       setLoading(false);
     }
   };

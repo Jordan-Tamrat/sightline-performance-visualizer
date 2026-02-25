@@ -1,3 +1,4 @@
+/* eslint-disable @next/next/no-img-element */
 'use client';
 
 import { useEffect, useState, useMemo } from 'react';
@@ -8,9 +9,9 @@ import { Loader2, AlertCircle, CheckCircle, Clock, Sparkles } from 'lucide-react
 import clsx from 'clsx';
 import ThemeToggle from '@/components/ThemeToggle';
 import Gauge from '../../../components/Gauge';
-import ScoreGrid from '@/components/ScoreGrid';
-import WebVitalsGrid from '@/components/WebVitalsGrid';
-import NetworkWaterfall from '@/components/NetworkWaterfall';
+import ScoreGrid, { ScoreGridProps } from '@/components/ScoreGrid';
+import WebVitalsGrid, { WebVitalsGridProps } from '@/components/WebVitalsGrid';
+import NetworkWaterfall, { NetworkWaterfallProps } from '@/components/NetworkWaterfall';
 import PerformanceSimulator from '@/components/PerformanceSimulator';
 
 interface Issue {
@@ -31,7 +32,10 @@ interface Report {
   url: string;
   status: 'pending' | 'processing' | 'completed' | 'failed';
   performance_score: number | null;
-  lighthouse_json: any;
+  lighthouse_json: {
+    categories?: Record<string, unknown>;
+    audits?: Record<string, unknown>;
+  } | null;
   ai_summary: string | null;
   screenshot: string | null;
   created_at: string;
@@ -46,6 +50,8 @@ export default function ResultPage() {
   const [showReveal, setShowReveal] = useState(false);
   const [hasRevealed, setHasRevealed] = useState(false);
 
+  // memoize parsed AI summary string
+  // eslint-disable-next-line react-hooks/preserve-manual-memoization
   const aiSummary: AISummary | null = useMemo(() => {
     if (!report?.ai_summary) return null;
     try {
@@ -67,8 +73,6 @@ export default function ResultPage() {
   useEffect(() => {
     if (!id) return;
 
-    let intervalId: NodeJS.Timeout;
-
     const fetchReport = async () => {
       try {
         const apiUrl = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000';
@@ -89,14 +93,15 @@ export default function ResultPage() {
     };
 
     fetchReport();
-    intervalId = setInterval(fetchReport, 2000);
+    const intervalId = setInterval(fetchReport, 2000);
 
     return () => clearInterval(intervalId);
   }, [id]);
 
   useEffect(() => {
     if (report?.status === 'completed' && !hasRevealed) {
-      setShowReveal(true);
+      // avoid synchronous setState in effect
+      setTimeout(() => setShowReveal(true), 0);
       const timer = setTimeout(() => {
         setShowReveal(false);
         setHasRevealed(true);
@@ -248,7 +253,7 @@ export default function ResultPage() {
             animate={{ opacity: hasRevealed ? 1 : 0, y: hasRevealed ? 0 : 40 }}
             transition={{ duration: 0.6, delay: 0.2 }}
           >
-            <ScoreGrid categories={report.lighthouse_json?.categories} />
+            <ScoreGrid categories={report.lighthouse_json?.categories as ScoreGridProps['categories']} />
           </motion.div>
 
           {/* Core Web Vitals Heatmap */}
@@ -257,7 +262,7 @@ export default function ResultPage() {
             animate={{ opacity: hasRevealed ? 1 : 0, y: hasRevealed ? 0 : 40 }}
             transition={{ duration: 0.6, delay: 0.4 }}
           >
-            <WebVitalsGrid audits={report.lighthouse_json?.audits} />
+            <WebVitalsGrid audits={report.lighthouse_json?.audits as WebVitalsGridProps['audits']} />
           </motion.div>
 
           {/* Interactive Network Waterfall */}
@@ -266,7 +271,7 @@ export default function ResultPage() {
             animate={{ opacity: hasRevealed ? 1 : 0, y: hasRevealed ? 0 : 40 }}
             transition={{ duration: 0.6, delay: 0.5 }}
           >
-            <NetworkWaterfall audits={report.lighthouse_json?.audits} />
+            <NetworkWaterfall audits={report.lighthouse_json?.audits as NetworkWaterfallProps['audits']} />
           </motion.div>
 
           {/* Performance Simulator */}
@@ -365,7 +370,7 @@ export default function ResultPage() {
           </motion.div>
 
           {/* Visual Timeline (Filmstrip) */}
-          {report.lighthouse_json?.audits?.['screenshot-thumbnails']?.details?.items && (
+          {((report.lighthouse_json?.audits?.['screenshot-thumbnails'] as {details?:{items?:{data:string;timing:number}[]}})?.details?.items) && (
             <motion.div
               initial={{ opacity: 0, y: 40 }}
               animate={hasRevealed ? { opacity: 1, y: 0 } : { opacity: 0, y: 40 }}
@@ -379,7 +384,7 @@ export default function ResultPage() {
               </div>
 
               <div className="grid grid-cols-2 md:grid-cols-5 gap-4 overflow-x-auto pb-4">
-                {report.lighthouse_json.audits['screenshot-thumbnails'].details.items.map((item: any, index: number) => (
+                {((report.lighthouse_json?.audits?.['screenshot-thumbnails'] as {details?:{items?:{data:string;timing:number}[]}})?.details?.items || []).map((item: { data: string; timing: number }, index: number) => (
                   <div key={index} className="bg-zinc-900 border border-zinc-800 rounded-lg p-2 flex flex-col items-center group hover:border-zinc-700 transition-colors">
                     <div className="relative w-full aspect-video bg-zinc-950 rounded overflow-hidden border border-zinc-800 mb-2">
                       <img src={item.data} alt={`Frame at ${item.timing}ms`} className="w-full h-full object-cover" />

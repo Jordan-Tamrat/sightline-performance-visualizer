@@ -5,50 +5,45 @@ import { Moon, Sun } from 'lucide-react';
 import { motion } from 'framer-motion';
 
 export default function ThemeToggle() {
-    const [theme, setTheme] = useState<'light' | 'dark'>('dark');
+    // initialize theme from localStorage (safe in client hook)
+    const [theme, setTheme] = useState<'light' | 'dark'>(() => {
+        if (typeof window === 'undefined') return 'dark';
+        const saved = localStorage.getItem('theme');
+        return saved === 'light' || saved === 'dark' ? saved : 'dark';
+    });
 
     useEffect(() => {
-        // Check local storage or system preference on mount
-        const savedTheme = localStorage.getItem('theme');
-        if (savedTheme === 'light' || savedTheme === 'dark') {
-            setTheme(savedTheme);
-            if (savedTheme === 'dark') {
-                document.documentElement.classList.add('dark');
-            } else {
-                document.documentElement.classList.remove('dark');
-            }
-        } else {
-            // Default to dark
+        // apply theme class whenever the value changes
+        if (theme === 'dark') {
             document.documentElement.classList.add('dark');
             localStorage.setItem('theme', 'dark');
+        } else {
+            document.documentElement.classList.remove('dark');
+            localStorage.setItem('theme', 'light');
         }
-        // Add event listener to sync across tabs
+
         const handleStorageChange = (e: StorageEvent) => {
             if (e.key === 'theme') {
                 const newTheme = e.newValue as 'light' | 'dark';
-                setTheme(newTheme);
-                if (newTheme === 'dark') {
-                    document.documentElement.classList.add('dark');
-                } else {
-                    document.documentElement.classList.remove('dark');
+                if (newTheme === 'light' || newTheme === 'dark') {
+                    setTheme(newTheme);
                 }
             }
         };
 
         window.addEventListener('storage', handleStorageChange);
         return () => window.removeEventListener('storage', handleStorageChange);
-    }, []);
+    }, [theme]);
 
     const toggleTheme = () => {
-        if (theme === 'dark') {
-            document.documentElement.classList.remove('dark');
-            localStorage.setItem('theme', 'light');
-            setTheme('light');
-        } else {
+        const newTheme = theme === 'dark' ? 'light' : 'dark';
+        if (newTheme === 'dark') {
             document.documentElement.classList.add('dark');
-            localStorage.setItem('theme', 'dark');
-            setTheme('dark');
+        } else {
+            document.documentElement.classList.remove('dark');
         }
+        localStorage.setItem('theme', newTheme);
+        setTheme(newTheme);
     };
 
     return (
