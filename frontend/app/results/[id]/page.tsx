@@ -1,6 +1,6 @@
-/* eslint-disable @next/next/no-img-element */
 'use client';
 
+import Image from 'next/image';
 import { useEffect, useState, useMemo } from 'react';
 import { useParams } from 'next/navigation';
 import axios from 'axios';
@@ -49,6 +49,8 @@ export default function ResultPage() {
   const [error, setError] = useState('');
   const [showReveal, setShowReveal] = useState(false);
   const [hasRevealed, setHasRevealed] = useState(false);
+  
+  const apiUrl = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000';
 
   // memoize parsed AI summary string
   // eslint-disable-next-line react-hooks/preserve-manual-memoization
@@ -75,7 +77,6 @@ export default function ResultPage() {
 
     const fetchReport = async () => {
       try {
-        const apiUrl = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000';
         const response = await axios.get(`${apiUrl}/api/reports/${id}/`);
         const data = response.data;
         setReport(data);
@@ -194,7 +195,6 @@ export default function ResultPage() {
   }
 
   if (!report) return null;
-  const apiUrl = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000';
   return (
     <div className="min-h-screen bg-zinc-50 dark:bg-zinc-950 text-zinc-900 dark:text-zinc-100 transition-colors relative overflow-x-hidden">
 
@@ -387,7 +387,13 @@ export default function ResultPage() {
                 {((report.lighthouse_json?.audits?.['screenshot-thumbnails'] as {details?:{items?:{data:string;timing:number}[]}})?.details?.items || []).map((item: { data: string; timing: number }, index: number) => (
                   <div key={index} className="bg-zinc-900 border border-zinc-800 rounded-lg p-2 flex flex-col items-center group hover:border-zinc-700 transition-colors">
                     <div className="relative w-full aspect-video bg-zinc-950 rounded overflow-hidden border border-zinc-800 mb-2">
-                      <img src={item.data} alt={`Frame at ${item.timing}ms`} className="w-full h-full object-cover" />
+                      <Image 
+                        src={item.data} 
+                        alt={`Frame at ${item.timing}ms`} 
+                        fill
+                        className="object-cover"
+                        sizes="(max-width: 768px) 50vw, 20vw"
+                      />
                     </div>
                     <span className="text-xs font-mono text-zinc-500 group-hover:text-zinc-300 transition-colors">
                       {(item.timing / 1000).toFixed(1)}s
@@ -408,10 +414,17 @@ export default function ResultPage() {
             >
               <h3 className="text-xl font-semibold">Final Screenshot</h3>
               <div className="bg-zinc-900 border border-zinc-800 rounded-2xl overflow-hidden p-2">
-                <img
-                  src={report.screenshot.startsWith('http') ? report.screenshot : `${apiUrl}${report.screenshot}`}
+                <Image
+                  src={report.screenshot.startsWith('http') 
+                    ? report.screenshot.replace(/^https?:\/\/[^/]+/, '') 
+                    : report.screenshot}
                   alt="Full Page Screenshot"
+                  width={1200}
+                  height={800}
                   className="w-full h-auto rounded-lg"
+                  sizes="(max-width: 768px) 100vw, 1200px"
+                  style={{ width: '100%', height: 'auto' }}
+                  priority
                 />
               </div>
             </motion.div>
