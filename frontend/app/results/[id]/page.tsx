@@ -1,7 +1,7 @@
 'use client';
 
 import Image from 'next/image';
-import { useEffect, useState, useMemo } from 'react';
+import { useEffect, useState } from 'react';
 import { useParams } from 'next/navigation';
 import axios from 'axios';
 import { motion, AnimatePresence } from 'framer-motion';
@@ -52,9 +52,8 @@ export default function ResultPage() {
   
   const apiUrl = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000';
 
-  // memoize parsed AI summary string
-  // eslint-disable-next-line react-hooks/preserve-manual-memoization
-  const aiSummary: AISummary | null = useMemo(() => {
+  // Parse AI summary string (memoized automatically by React Compiler)
+  const aiSummary: AISummary | null = (() => {
     if (!report?.ai_summary) return null;
     try {
       // Handle potentially double-stringified JSON or weird markdown formatting
@@ -70,7 +69,7 @@ export default function ResultPage() {
       console.error("Failed to parse AI Summary JSON:", e);
       return null;
     }
-  }, [report?.ai_summary]);
+  })();
 
   useEffect(() => {
     if (!id) return;
@@ -80,14 +79,24 @@ export default function ResultPage() {
         const response = await axios.get(`${apiUrl}/api/reports/${id}/`);
         const data = response.data;
         setReport(data);
+        
+        // If there's an error from the backend (e.g., report not found or failed), treat it as an error
+        if (data.detail) {
+             setError(data.detail);
+             setLoading(false);
+             clearInterval(intervalId);
+             return;
+        }
 
         if (data.status === 'completed' || data.status === 'failed') {
           setLoading(false);
           clearInterval(intervalId);
         }
-      } catch (err) {
+      } catch (err: any) {
         console.error(err);
-        setError('Failed to fetch report');
+        // Safely access error message
+        const errorMessage = err.response?.data?.detail || err.message || 'Failed to fetch report';
+        setError(errorMessage);
         setLoading(false);
         clearInterval(intervalId);
       }
@@ -97,7 +106,7 @@ export default function ResultPage() {
     const intervalId = setInterval(fetchReport, 2000);
 
     return () => clearInterval(intervalId);
-  }, [id]);
+  }, [id, apiUrl]);
 
   useEffect(() => {
     if (report?.status === 'completed' && !hasRevealed) {

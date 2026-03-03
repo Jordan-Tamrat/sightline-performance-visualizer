@@ -5,14 +5,21 @@ import { Moon, Sun } from 'lucide-react';
 import { motion } from 'framer-motion';
 
 export default function ThemeToggle() {
-    // initialize theme from localStorage (safe in client hook)
-    const [theme, setTheme] = useState<'light' | 'dark'>(() => {
-        if (typeof window === 'undefined') return 'dark';
+    const [mounted, setMounted] = useState(false);
+    const [theme, setTheme] = useState<'light' | 'dark'>('dark');
+
+    // Wait until mounted to access window/localStorage to avoid hydration mismatch
+    useEffect(() => {
+        setMounted(true);
         const saved = localStorage.getItem('theme');
-        return saved === 'light' || saved === 'dark' ? saved : 'dark';
-    });
+        if (saved === 'light' || saved === 'dark') {
+            setTheme(saved);
+        }
+    }, []);
 
     useEffect(() => {
+        if (!mounted) return;
+        
         // apply theme class whenever the value changes
         if (theme === 'dark') {
             document.documentElement.classList.add('dark');
@@ -33,18 +40,20 @@ export default function ThemeToggle() {
 
         window.addEventListener('storage', handleStorageChange);
         return () => window.removeEventListener('storage', handleStorageChange);
-    }, [theme]);
+    }, [theme, mounted]);
 
     const toggleTheme = () => {
         const newTheme = theme === 'dark' ? 'light' : 'dark';
-        if (newTheme === 'dark') {
-            document.documentElement.classList.add('dark');
-        } else {
-            document.documentElement.classList.remove('dark');
-        }
-        localStorage.setItem('theme', newTheme);
         setTheme(newTheme);
     };
+
+    if (!mounted) {
+        // Render a placeholder or nothing during SSR to match initial server HTML
+        // This prevents the "sun vs moon" mismatch
+        return (
+            <div className="w-9 h-9 p-2 rounded-full bg-zinc-200 dark:bg-zinc-800" aria-hidden="true" />
+        );
+    }
 
     return (
         <motion.button

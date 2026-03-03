@@ -1,7 +1,7 @@
 'use client';
 
 import { motion } from 'framer-motion';
-import { Activity, Layout, Zap, AlertCircle, CheckCircle } from 'lucide-react';
+import { Activity, Layout, Zap, AlertCircle, CheckCircle, Paintbrush as PaintBrush, FastForward, MousePointer, Server } from 'lucide-react';
 import clsx from 'clsx';
 
 interface AuditData {
@@ -21,6 +21,10 @@ interface WebVitalsGridProps {
         'cumulative-layout-shift'?: AuditData;
         'interaction-to-next-paint'?: AuditData;
         'total-blocking-time'?: AuditData;
+        'first-contentful-paint'?: AuditData;
+        'speed-index'?: AuditData;
+        'interactive'?: AuditData;
+        'server-response-time'?: AuditData;
     };
 }
 
@@ -33,7 +37,7 @@ const getSeverity = (id: string, value: number, isTBTFallback?: boolean): Severi
     if (isTBTFallback) {
         // TBT Lab thresholds: Good <= 200ms, NI <= 600ms
         if (value <= 200) return 'good';
-        if (value <= 600) return 'needs-improvement';
+        if (value <= 500) return 'needs-improvement';
         return 'poor';
     }
 
@@ -52,6 +56,26 @@ const getSeverity = (id: string, value: number, isTBTFallback?: boolean): Severi
             // Thresholds: Good <= 0.1, NI <= 0.25
             if (value <= 0.1) return 'good';
             if (value <= 0.25) return 'needs-improvement';
+            return 'poor';
+        case 'fcp':
+            // Thresholds: Good <= 1.8s (1800ms), NI <= 3.0s (3000ms)
+            if (value <= 1800) return 'good';
+            if (value <= 3000) return 'needs-improvement';
+            return 'poor';
+        case 'si':
+            // Thresholds: Good <= 3.4s (3400ms), NI <= 5.8s (5800ms)
+            if (value <= 3400) return 'good';
+            if (value <= 5800) return 'needs-improvement';
+            return 'poor';
+        case 'tti':
+            // Thresholds: Good <= 3.8s (3800ms), NI <= 7.3s (7300ms)
+            if (value <= 3800) return 'good';
+            if (value <= 7300) return 'needs-improvement';
+            return 'poor';
+        case 'ttfb':
+            // Thresholds: Good <= 800ms, NI <= 1800ms
+            if (value <= 800) return 'good';
+            if (value <= 1800) return 'needs-improvement';
             return 'poor';
         default:
             return 'poor';
@@ -94,6 +118,38 @@ export default function WebVitalsGrid({ audits }: WebVitalsGridProps) {
             data: audits['cumulative-layout-shift'] as AuditData | undefined,
             icon: Layout,
             description: 'Movement of visible elements within the viewport.'
+        },
+        {
+            id: 'fcp',
+            title: 'First Contentful Paint',
+            short: 'FCP',
+            data: audits['first-contentful-paint'] as AuditData | undefined,
+            icon: PaintBrush,
+            description: 'First text or image painted.'
+        },
+        {
+            id: 'si',
+            title: 'Speed Index',
+            short: 'SI',
+            data: audits['speed-index'] as AuditData | undefined,
+            icon: FastForward,
+            description: 'How quickly content is visually populated.'
+        },
+        {
+            id: 'tti',
+            title: 'Time to Interactive',
+            short: 'TTI',
+            data: audits['interactive'] as AuditData | undefined,
+            icon: MousePointer,
+            description: 'Time until page is fully interactive.'
+        },
+        {
+            id: 'ttfb',
+            title: 'Time to First Byte',
+            short: 'TTFB',
+            data: audits['server-response-time'] as AuditData | undefined,
+            icon: Server,
+            description: 'Time taken for the server to respond.'
         }
     ];
 
@@ -101,7 +157,7 @@ export default function WebVitalsGrid({ audits }: WebVitalsGridProps) {
         <div className="space-y-4">
             <div className="flex items-center gap-2 mb-2">
                 <Activity className="w-5 h-5 text-blue-500" />
-                <h3 className="text-xl font-semibold">Core Web Vitals</h3>
+                <h3 className="text-xl font-semibold">Web Vitals</h3>
             </div>
 
             <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
