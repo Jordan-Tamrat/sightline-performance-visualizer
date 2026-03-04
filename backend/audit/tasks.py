@@ -7,54 +7,47 @@ import os
 import google.generativeai as genai
 from playwright.sync_api import sync_playwright
 from django.core.files import File
+import time
 
-def take_screenshot(url, report_id):
-    """Captures a screenshot and returns the browser executable path."""
-    screenshot_path = f"/tmp/screenshot_{report_id}.png"
-    executable_path = None
-    
-    with sync_playwright() as p:
-        # Launch browser
-        browser = p.chromium.launch(headless=True)
-        executable_path = p.chromium.executable_path
-        
-        # New context and page
-        page = browser.new_page()
-        page.goto(url, timeout=60000) # 60s timeout for page load
-        page.screenshot(path=screenshot_path, full_page=False)
-        browser.close()
-        
-    return screenshot_path, executable_path
+# Helper functions consolidated into run_audit for strict session management
 
-def run_lighthouse(url, executable_path, report_id):
-    """Runs Lighthouse audit and returns the JSON data."""
+def run_lighthouse(url, report_id, port=9222, chrome_path=None):
+    """Runs Lighthouse audit attached to an existing Chrome instance."""
     lighthouse_report_path = f"/tmp/report_{report_id}.json"
     
+    # Base command
     cmd = [
         "lighthouse",
         url,
+        f"--port={port}",
         "--output=json",
         f"--output-path={lighthouse_report_path}",
-        "--chrome-flags=--headless --no-sandbox --disable-gpu"
+        "--disable-storage-reset",
+        "--only-categories=performance,accessibility,best-practices,seo",
+        "--save-assets",
+        "--throttling-method=devtools",
+        "--disable-full-page-screenshot",
     ]
     
-    # Set CHROME_PATH environment variable
+    # Set environment variables
     env = os.environ.copy()
-    if executable_path:
-        env['CHROME_PATH'] = executable_path
+    if chrome_path:
+        # Force Lighthouse to use the exact same binary Playwright is using
+        env["CHROME_PATH"] = chrome_path
+        print(f"Lighthouse using CHROME_PATH: {chrome_path}")
     
     try:
-        # Added timeout=120s protection
+        # Added timeout=180s protection (increased for trace generation)
         subprocess.run(
             cmd, 
             check=True, 
             stdout=subprocess.PIPE, 
             stderr=subprocess.PIPE, 
             env=env,
-            timeout=120
+            timeout=180
         )
     except subprocess.TimeoutExpired:
-        raise Exception("Lighthouse audit timed out after 120 seconds.")
+        raise Exception("Lighthouse audit timed out after 180 seconds.")
     except subprocess.CalledProcessError as e:
         error_msg = f"Lighthouse command failed with exit code {e.returncode}."
         if e.stderr:
@@ -63,8 +56,60 @@ def run_lighthouse(url, executable_path, report_id):
             error_msg += f"\nStdout: {e.stdout.decode()}"
         raise Exception(error_msg)
         
+    # Read the main report
     with open(lighthouse_report_path, 'r', encoding='utf-8') as f:
         lighthouse_data = json.load(f)
+
+    # Locate and process the trace file
+    # Lighthouse --save-assets creates report_name-0.trace.json
+    trace_path = f"/tmp/report_{report_id}-0.trace.json"
+    
+    if os.path.exists(trace_path):
+        try:
+            print(f"Processing trace file: {trace_path}")
+            with open(trace_path, 'r', encoding='utf-8') as f:
+                trace_data = json.load(f)
+                
+            # Extract only Screenshot events to keep DB size manageable
+            # We also need navigationStart to calculate relative timing
+            trace_events = trace_data.get('traceEvents', [])
+            
+            filtered_events = []
+            for event in trace_events:
+                if event.get('name') == 'Screenshot':
+                    filtered_events.append(event)
+                elif event.get('name') == 'navigationStart':
+                    filtered_events.append(event)
+                # Keep TracingStartedInBrowser as a fallback for start time
+                elif event.get('name') == 'TracingStartedInBrowser':
+                    filtered_events.append(event)
+                # Keep firstContentfulPaint for calibration
+                elif event.get('name') == 'firstContentfulPaint':
+                    filtered_events.append(event)
+            
+            print(f"Extracted {len(filtered_events)} events from trace.")
+            
+            # Embed trace screenshots into the main JSON
+            lighthouse_data['trace_screenshots'] = filtered_events
+            
+            # Clean up trace file
+            os.remove(trace_path)
+            
+        except Exception as e:
+            print(f"Failed to process trace file: {e}")
+            # Don't fail the whole audit if trace processing fails
+            pass
+    else:
+        print(f"Trace file not found at: {trace_path}")
+        # List files in /tmp to debug
+        try:
+            print(f"Files in /tmp: {os.listdir('/tmp')}")
+        except:
+            pass
+    
+    # Clean up main report file
+    if os.path.exists(lighthouse_report_path):
+        os.remove(lighthouse_report_path)
         
     return lighthouse_data, lighthouse_report_path
 
@@ -155,9 +200,15 @@ def generate_ai_summary(lighthouse_data, url):
 
 @shared_task(bind=True, max_retries=3, default_retry_delay=30)
 def run_audit(self, report_id):
-    url = None # Fix 1: Initialize url safely
+    # CRITICAL: Playwright uses an async event loop internally even in its sync API.
+    # This conflicts with Django's synchronous database safety checks.
+    # We set this environment variable to allow DB operations within this context.
+    os.environ["DJANGO_ALLOW_ASYNC_UNSAFE"] = "true"
+    url = None
     screenshot_path = None
     lighthouse_report_path = None
+    browser = None
+    p = None
     
     try:
         report = Report.objects.get(id=report_id)
@@ -167,47 +218,111 @@ def run_audit(self, report_id):
 
         print(f"Starting audit for {url}")
 
-        # 1. Playwright Screenshot
-        screenshot_path, executable_path = take_screenshot(url, report_id)
+        # 1. Launch Playwright with Remote Debugging
+        screenshot_path = f"/tmp/screenshot_{report_id}.png"
         
-        # Save screenshot immediately to DB so frontend progress UI updates
-        with open(screenshot_path, 'rb') as f:
-            report.screenshot.save(f"screenshot_{report_id}.png", File(f), save=True)
+        # Start Playwright
+        p = sync_playwright().start()
+        
+        # Launch browser with remote debugging port 9222
+        browser = p.chromium.launch(
+            headless=True,
+            args=['--remote-debugging-port=9222']
+        )
+        
+        # Create a new page and navigate
+        page = browser.new_page()
+        page.goto(url, timeout=60000)
+        
+        # Take screenshot (Visual Check)
+        page.screenshot(path=screenshot_path, full_page=False)
+        
+        # Save screenshot early to show progress in UI (Step 1 Complete)
+        if os.path.exists(screenshot_path):
+            with open(screenshot_path, 'rb') as f:
+                report.screenshot.save(f"screenshot_{report_id}.png", File(f), save=True)
+            print(f"Initial screenshot captured and saved for {url}")
+        
+        # --- Perform Interactions (Sequentially before audit) ---
+        # This "warms up" the page and exercises typical user flows.
+        print("Starting simulated user interactions (warmup)...")
+        try:
+            # Wait for network idle to ensure page is settled
+            page.wait_for_load_state("networkidle", timeout=30000)
+            
+            # Simple Scroll Interactions
+            for _ in range(3):
+                page.mouse.wheel(0, 500)
+                time.sleep(0.3)
+            page.mouse.wheel(0, -1500)
+            
+            # Click something to trigger event listeners
+            page.click("body", force=True)
+            time.sleep(0.5)
+            print("Finished simulated user interactions.")
+        except Exception as e:
+            print(f"Interaction failed (continuing to audit): {e}")
 
-        # 2. Lighthouse Audit
-        lighthouse_data, lighthouse_report_path = run_lighthouse(url, executable_path, report_id)
+        # 2. Run Lighthouse (Attached to the SAME chromium instance via port)
+        # Bulletproof: Pass the exact same executable path Playwright is using
+        executable_path = p.chromium.executable_path
+        print(f"Running Lighthouse attached to port 9222 (Binary: {executable_path}) for {url}...")
         
-        # Extract score and save to DB immediately to trigger frontend Stage 3
-        performance_score = int(lighthouse_data.get('categories', {}).get('performance', {}).get('score', 0) * 100)
+        lighthouse_data, lighthouse_report_path = run_lighthouse(
+            url, 
+            report_id, 
+            port=9222, 
+            chrome_path=executable_path
+        )
+        
+        # Update Lighthouse results early to show progress (Step 2 Complete)
         report.lighthouse_json = lighthouse_data
+        performance_score = int(lighthouse_data.get('categories', {}).get('performance', {}).get('score', 0) * 100)
         report.performance_score = performance_score
-        report.save(update_fields=['lighthouse_json', 'performance_score'])
+        report.save()
 
         # 3. AI Summary
         report.ai_summary = generate_ai_summary(lighthouse_data, url)
-
+        # Final Step Complete
         report.status = 'completed'
-        report.save(update_fields=['ai_summary', 'status'])
+        report.save()
 
-        # Cleanup
-        if screenshot_path and os.path.exists(screenshot_path):
-            os.remove(screenshot_path)
-        if lighthouse_report_path and os.path.exists(lighthouse_report_path):
-            os.remove(lighthouse_report_path)
-            
         return f"Audit completed for {url}"
 
     except Exception as e:
-        print(f"Error auditing report_id={report_id}: {e}") # Fix 1: Safe logging
+        print(f"Error auditing report_id={report_id}: {e}")
         
-        # Fix 3: Retry logic
+        # Retry logic if within retry limits
         try:
-            # Only retry if it's NOT a hard logic error (like 404 on DB get)
-            # But here we catch general Exception, so we can retry on network glitches
+            # Re-raise to let Celery handle retry
             raise self.retry(exc=e)
         except self.MaxRetriesExceededError:
+            # Final failure after all retries
             if 'report' in locals():
-                report.status = 'failed'
-                report.ai_summary = f"Error: {str(e)}"
-                report.save()
+                try:
+                    report.status = 'failed'
+                    report.ai_summary = f"Error: {str(e)}"
+                    report.save()
+                except Exception as db_err:
+                     print(f"Failed to save error state to DB: {db_err}")
             return f"Audit failed for report_id={report_id}: {e}"
+        except Exception:
+            # This handles cases where retry didn't throw MaxRetriesExceededError
+            # but we still want to ensure cleanup happens below
+            pass
+
+    finally:
+        # ABSOLUTE CLEANUP - Always close browser and remove temp files
+        if browser:
+            try: browser.close()
+            except: pass
+        if p:
+            try: p.stop()
+            except: pass
+        
+        if screenshot_path and os.path.exists(screenshot_path):
+            try: os.remove(screenshot_path)
+            except: pass
+        if lighthouse_report_path and os.path.exists(lighthouse_report_path):
+            try: os.remove(lighthouse_report_path)
+            except: pass

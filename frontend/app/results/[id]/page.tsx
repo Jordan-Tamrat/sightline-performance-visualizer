@@ -49,7 +49,9 @@ export default function ResultPage() {
   const [error, setError] = useState('');
   const [showReveal, setShowReveal] = useState(false);
   const [hasRevealed, setHasRevealed] = useState(false);
-  
+  const [filmstrip, setFilmstrip] = useState<{ data: string; timing: number }[]>([]);
+  const [loadingFilmstrip, setLoadingFilmstrip] = useState(false);
+
   const apiUrl = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000';
 
   // Parse AI summary string (memoized automatically by React Compiler)
@@ -79,33 +81,39 @@ export default function ResultPage() {
         const response = await axios.get(`${apiUrl}/api/reports/${id}/`);
         const data = response.data;
         setReport(data);
-        
-        // If there's an error from the backend (e.g., report not found or failed), treat it as an error
-        if (data.detail) {
-             setError(data.detail);
-             setLoading(false);
-             clearInterval(intervalId);
-             return;
-        }
 
         if (data.status === 'completed' || data.status === 'failed') {
           setLoading(false);
-          clearInterval(intervalId);
+          return true; // Signal completion
         }
       } catch (err: any) {
         console.error(err);
-        // Safely access error message
         const errorMessage = err.response?.data?.detail || err.message || 'Failed to fetch report';
         setError(errorMessage);
         setLoading(false);
-        clearInterval(intervalId);
+        return true; // Signal error/completion
       }
+      return false;
     };
 
-    fetchReport();
-    const intervalId = setInterval(fetchReport, 2000);
+    // Use a variable to track if we should stop polling
+    let shouldStop = false;
 
-    return () => clearInterval(intervalId);
+    fetchReport().then((finished) => {
+      if (finished || shouldStop) return;
+
+      const intervalId = setInterval(async () => {
+        const finished = await fetchReport();
+        if (finished || shouldStop) {
+          clearInterval(intervalId);
+        }
+      }, 2000);
+
+      return () => {
+        shouldStop = true;
+        clearInterval(intervalId);
+      };
+    });
   }, [id, apiUrl]);
 
   useEffect(() => {
@@ -116,11 +124,29 @@ export default function ResultPage() {
         setShowReveal(false);
         setHasRevealed(true);
       }, 2500); // Wait 2.5s for gauge to animate before revealing full UI
+
+      // Fetch filmstrip
+      const fetchFilmstrip = async () => {
+        setLoadingFilmstrip(true);
+        try {
+          const response = await axios.get(`${apiUrl}/api/reports/${id}/filmstrip/`);
+          setFilmstrip(response.data.frames || []);
+        } catch (e) {
+          console.error("Failed to fetch filmstrip", e);
+        } finally {
+          setLoadingFilmstrip(false);
+        }
+      };
+
+      fetchFilmstrip();
+
       return () => clearTimeout(timer);
     }
-  }, [report?.status, hasRevealed]);
+  }, [report?.status, hasRevealed, id, apiUrl]);
 
-  if (loading && (!report || report.status === 'pending' || report.status === 'processing')) {
+  // Show analysis view only if not finished
+  const isFinished = report?.status === 'completed' || report?.status === 'failed';
+  if (!isFinished) {
     // Determine active steps
     const hasScreenshot = !!report?.screenshot;
     const hasLighthouse = !!report?.lighthouse_json;
@@ -379,29 +405,36 @@ export default function ResultPage() {
           </motion.div>
 
           {/* Visual Timeline (Filmstrip) */}
-          {((report.lighthouse_json?.audits?.['screenshot-thumbnails'] as {details?:{items?:{data:string;timing:number}[]}})?.details?.items) && (
-            <motion.div
-              initial={{ opacity: 0, y: 40 }}
-              animate={hasRevealed ? { opacity: 1, y: 0 } : { opacity: 0, y: 40 }}
-              transition={{ duration: 0.6, delay: 0.8 }}
-              className="space-y-4"
-            >   <div className="flex items-end justify-between mb-4">
-                <div>
-                  <h3 className="text-xl font-semibold mb-1">Visual Loading Timeline</h3>
-                  <p className="text-sm text-zinc-400">See exactly how your page loads frame-by-frame. This helps identify layout shifts and perceived speed.</p>
-                </div>
+          <motion.div
+            initial={{ opacity: 0, y: 40 }}
+            animate={hasRevealed ? { opacity: 1, y: 0 } : { opacity: 0, y: 40 }}
+            transition={{ duration: 0.6, delay: 0.8 }}
+            className="space-y-4"
+          >
+            <div className="flex items-end justify-between mb-4">
+              <div>
+                <h3 className="text-xl font-semibold mb-1">Visual Loading Timeline</h3>
+                <p className="text-sm text-zinc-400">See exactly how your page loads frame-by-frame. Generated from Lighthouse trace.</p>
               </div>
+            </div>
 
-              <div className="grid grid-cols-2 md:grid-cols-5 gap-4 overflow-x-auto pb-4">
-                {((report.lighthouse_json?.audits?.['screenshot-thumbnails'] as {details?:{items?:{data:string;timing:number}[]}})?.details?.items || []).map((item: { data: string; timing: number }, index: number) => (
-                  <div key={index} className="bg-zinc-900 border border-zinc-800 rounded-lg p-2 flex flex-col items-center group hover:border-zinc-700 transition-colors">
+            {loadingFilmstrip ? (
+              <div className="flex items-center justify-center py-12 text-zinc-500 gap-2">
+                <Loader2 className="w-5 h-5 animate-spin" />
+                <span>Loading filmstrip...</span>
+              </div>
+            ) : filmstrip.length > 0 ? (
+              <div className="flex gap-4 overflow-x-auto pb-4 snap-x">
+                {filmstrip.map((item, index) => (
+                  <div key={index} className="flex-none w-[200px] snap-center bg-zinc-900 border border-zinc-800 rounded-lg p-1 flex flex-col items-center group hover:border-zinc-700 transition-colors">
                     <div className="relative w-full aspect-video bg-zinc-950 rounded overflow-hidden border border-zinc-800 mb-2">
-                      <Image 
-                        src={item.data} 
-                        alt={`Frame at ${item.timing}ms`} 
+                      <Image
+                        src={item.data}
+                        alt={`Frame at ${item.timing}ms`}
                         fill
                         className="object-cover"
-                        sizes="(max-width: 768px) 50vw, 20vw"
+                        sizes="200px"
+                        unoptimized
                       />
                     </div>
                     <span className="text-xs font-mono text-zinc-500 group-hover:text-zinc-300 transition-colors">
@@ -410,8 +443,13 @@ export default function ResultPage() {
                   </div>
                 ))}
               </div>
-            </motion.div>
-          )}
+            ) : (
+              <div className="flex flex-col items-center justify-center py-12 text-zinc-500 bg-zinc-900/50 border border-zinc-800/50 rounded-xl border-dashed">
+                <p>No filmstrip data available for this report.</p>
+                <p className="text-xs text-zinc-600 mt-1">Try running a new audit to generate a timeline.</p>
+              </div>
+            )}
+          </motion.div>
 
           {/* Screenshot */}
           {report.screenshot && (
@@ -422,10 +460,10 @@ export default function ResultPage() {
               className="space-y-4"
             >
               <h3 className="text-xl font-semibold">Final Screenshot</h3>
-              <div className="bg-zinc-900 border border-zinc-800 rounded-2xl overflow-hidden p-2">
+              <div className="bg-zinc-900 border border-zinc-800 rounded-2xl overflow-hidden p-1">
                 <Image
-                  src={report.screenshot.startsWith('http') 
-                    ? report.screenshot.replace(/^https?:\/\/[^/]+/, '') 
+                  src={report.screenshot.startsWith('http')
+                    ? report.screenshot.replace(/^https?:\/\/[^/]+/, '')
                     : report.screenshot}
                   alt="Full Page Screenshot"
                   width={1200}

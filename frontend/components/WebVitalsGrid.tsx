@@ -15,7 +15,7 @@ interface AuditData {
     };
 }
 
-interface WebVitalsGridProps {
+export interface WebVitalsGridProps {
     audits: {
         'largest-contentful-paint'?: AuditData;
         'cumulative-layout-shift'?: AuditData;

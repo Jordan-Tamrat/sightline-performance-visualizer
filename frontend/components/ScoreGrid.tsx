@@ -8,7 +8,7 @@ interface CategoryData {
     score: number | null;
 }
 
-interface ScoreGridProps {
+export interface ScoreGridProps {
     categories: {
         performance?: CategoryData;
         accessibility?: CategoryData;

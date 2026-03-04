@@ -75,7 +75,7 @@ interface AuditItem {
     mimeType?: string;
 }
 
-interface NetworkWaterfallProps {
+export interface NetworkWaterfallProps {
     audits: {
         'network-requests'?: {
             details?: {
