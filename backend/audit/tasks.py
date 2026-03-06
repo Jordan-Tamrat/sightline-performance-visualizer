@@ -9,11 +9,53 @@ from playwright.sync_api import sync_playwright
 from django.core.files import File
 import time
 
-# Helper functions consolidated into run_audit for strict session management
+# ─── Device and Network Configuration ───────────────────────────────────────
 
-def run_lighthouse(url, report_id, port=9222, chrome_path=None):
+DEVICE_CONFIGS = {
+    'mobile': {
+        'viewport': {'width': 390, 'height': 844},
+        'is_mobile': True,
+        'has_touch': True,
+        'device_scale_factor': 3,
+    },
+    'desktop': {
+        'viewport': {'width': 1366, 'height': 768},
+        'is_mobile': False,
+        'has_touch': False,
+        'device_scale_factor': 1,
+    },
+}
+
+# Throughput values are in bytes/sec (Lighthouse/CDP convention)
+NETWORK_PRESETS = {
+    'slow3g': {
+        'offline': False,
+        'latency': 400,
+        'downloadThroughput': 51200,       
+        'uploadThroughput': 51200,        
+    },
+    'fast3g': {
+        'offline': False,
+        'latency': 150,
+        'downloadThroughput': 209715,      
+        'uploadThroughput': 78643,         
+    },
+    '4g': {
+        'offline': False,
+        'latency': 40,
+        'downloadThroughput': 1179648,     
+        'uploadThroughput': 1179648,       
+    },
+}
+
+
+def run_lighthouse(url, report_id, network_preset, port=9222, chrome_path=None, device_type='desktop'):
     """Runs Lighthouse audit attached to an existing Chrome instance."""
     lighthouse_report_path = f"/tmp/report_{report_id}.json"
+    
+    # Lighthouse CLI flag expects Kilobits per second (Kbps)
+    dl_kbps = (network_preset['downloadThroughput'] * 8) // 1024
+    ul_kbps = (network_preset['uploadThroughput'] * 8) // 1024
     
     # Base command
     cmd = [
@@ -22,17 +64,36 @@ def run_lighthouse(url, report_id, port=9222, chrome_path=None):
         f"--port={port}",
         "--output=json",
         f"--output-path={lighthouse_report_path}",
-        "--disable-storage-reset",
         "--only-categories=performance,accessibility,best-practices,seo",
         "--save-assets",
-        "--throttling-method=devtools",
         "--disable-full-page-screenshot",
+        
+        # Enable DevTools throttling and pass custom dynamic parameters
+        "--throttling-method=devtools",
+        f"--throttling.requestLatencyMs={network_preset['latency']}",
+        f"--throttling.downloadThroughputKbps={dl_kbps}",
+        f"--throttling.uploadThroughputKbps={ul_kbps}",
     ]
+    
+    # Device-specific flags
+    if device_type == 'mobile':
+        cmd.extend([
+            "--form-factor=mobile",
+            "--throttling.cpuSlowdownMultiplier=4"
+        ])
+    else:
+        cmd.extend([
+            "--form-factor=desktop",
+            "--screenEmulation.mobile=false",
+            "--screenEmulation.width=1350",
+            "--screenEmulation.height=940",
+            "--screenEmulation.deviceScaleFactor=1",
+            "--throttling.cpuSlowdownMultiplier=1"
+        ])
     
     # Set environment variables
     env = os.environ.copy()
     if chrome_path:
-        # Force Lighthouse to use the exact same binary Playwright is using
         env["CHROME_PATH"] = chrome_path
         print(f"Lighthouse using CHROME_PATH: {chrome_path}")
     
@@ -213,10 +274,12 @@ def run_audit(self, report_id):
     try:
         report = Report.objects.get(id=report_id)
         url = report.url
+        device_type = report.device_type or 'desktop'
+        network_type = report.network_type or '4g'
         report.status = 'processing'
         report.save()
 
-        print(f"Starting audit for {url}")
+        print(f"Starting audit for {url} [device={device_type}, network={network_type}]")
 
         # 1. Launch Playwright with Remote Debugging
         screenshot_path = f"/tmp/screenshot_{report_id}.png"
@@ -230,59 +293,65 @@ def run_audit(self, report_id):
             args=['--remote-debugging-port=9222']
         )
         
-        # Create a new page and navigate
-        page = browser.new_page()
-        page.goto(url, timeout=60000)
-        
-        # Take screenshot (Visual Check)
-        page.screenshot(path=screenshot_path, full_page=False)
-        
-        # Save screenshot early to show progress in UI (Step 1 Complete)
-        if os.path.exists(screenshot_path):
-            with open(screenshot_path, 'rb') as f:
-                report.screenshot.save(f"screenshot_{report_id}.png", File(f), save=True)
-            print(f"Initial screenshot captured and saved for {url}")
-        
-        # --- Perform Interactions (Sequentially before audit) ---
-        # This "warms up" the page and exercises typical user flows.
-        print("Starting simulated user interactions (warmup)...")
-        try:
-            # Wait for network idle to ensure page is settled
-            page.wait_for_load_state("networkidle", timeout=30000)
-            
-            # Simple Scroll Interactions
-            for _ in range(3):
-                page.mouse.wheel(0, 500)
-                time.sleep(0.3)
-            page.mouse.wheel(0, -1500)
-            
-            # Click something to trigger event listeners
-            page.click("body", force=True)
-            time.sleep(0.5)
-            print("Finished simulated user interactions.")
-        except Exception as e:
-            print(f"Interaction failed (continuing to audit): {e}")
+        # Save early progress update (browser ready, initializing)
+        report.save()
 
-        # 2. Run Lighthouse (Attached to the SAME chromium instance via port)
-        # Bulletproof: Pass the exact same executable path Playwright is using
+        # 2. Run Lighthouse FIRST (STEP 1: Ensures 100% untouched browser state for pure benchmark)
+        network_preset = NETWORK_PRESETS.get(network_type, NETWORK_PRESETS['4g'])
         executable_path = p.chromium.executable_path
-        print(f"Running Lighthouse attached to port 9222 (Binary: {executable_path}) for {url}...")
+        print(f"Running Lighthouse on port 9222 (Binary: {executable_path}) for {url}...")
         
         lighthouse_data, lighthouse_report_path = run_lighthouse(
             url, 
             report_id, 
+            network_preset=network_preset,
             port=9222, 
-            chrome_path=executable_path
+            chrome_path=executable_path,
+            device_type=device_type,
         )
         
-        # Update Lighthouse results early to show progress (Step 2 Complete)
+        # Update Lighthouse results early to show progress (Step 1 Complete)
         report.lighthouse_json = lighthouse_data
         performance_score = int(lighthouse_data.get('categories', {}).get('performance', {}).get('score', 0) * 100)
         report.performance_score = performance_score
         report.save()
 
-        # 3. AI Summary
+        # 3. Take High-Quality Screenshot with Playwright (STEP 2: Safe to warm up resources now)
+        print(f"Taking high-res screenshot for {url}...")
+        
+        # Prepare context for screenshot
+        device_config = DEVICE_CONFIGS.get(device_type, DEVICE_CONFIGS['desktop'])
+        context = browser.new_context(
+            viewport=device_config['viewport'],
+            is_mobile=device_config['is_mobile'],
+            has_touch=device_config['has_touch'],
+            device_scale_factor=device_config['device_scale_factor'],
+        )
+        page = context.new_page()
+        
+        try:
+            # Navigate quickly just to get the visual state
+            page.goto(url, timeout=60000, wait_until='networkidle')
+            
+            # Take a high-quality screenshot
+            page.screenshot(path=screenshot_path, full_page=False)
+            
+            # Save screenshot to DB (Step 2 Complete)
+            if os.path.exists(screenshot_path):
+                with open(screenshot_path, 'rb') as f:
+                    report.screenshot.save(f"screenshot_{report_id}.png", File(f), save=True)
+                print(f"High-quality screenshot captured and saved for {url}")
+        except Exception as ss_err:
+            print(f"Screenshot capture failed (non-critical): {ss_err}")
+        finally:
+            try: page.close()
+            except: pass
+            try: context.close()
+            except: pass
+
+        # 4. AI Summary (STEP 3)
         report.ai_summary = generate_ai_summary(lighthouse_data, url)
+        
         # Final Step Complete
         report.status = 'completed'
         report.save()

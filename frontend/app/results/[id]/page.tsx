@@ -5,7 +5,7 @@ import { useEffect, useState } from 'react';
 import { useParams } from 'next/navigation';
 import axios from 'axios';
 import { motion, AnimatePresence } from 'framer-motion';
-import { Loader2, AlertCircle, CheckCircle, Clock, Sparkles } from 'lucide-react';
+import { Loader2, AlertCircle, CheckCircle, Clock, Sparkles, Monitor, Smartphone, Wifi, Signal } from 'lucide-react';
 import clsx from 'clsx';
 import ThemeToggle from '@/components/ThemeToggle';
 import Gauge from '../../../components/Gauge';
@@ -32,6 +32,8 @@ interface Report {
   url: string;
   status: 'pending' | 'processing' | 'completed' | 'failed';
   performance_score: number | null;
+  device_type: 'desktop' | 'mobile';
+  network_type: '4g' | 'fast3g' | 'slow3g';
   lighthouse_json: {
     categories?: Record<string, unknown>;
     audits?: Record<string, unknown>;
@@ -160,51 +162,63 @@ export default function ResultPage() {
           </h2>
 
           <div className="space-y-6">
-            {/* Step 1: Web Navigation & Screenshot */}
-            <div className="flex items-center gap-4">
-              <div className={clsx("w-10 h-10 rounded-full flex items-center justify-center",
-                hasScreenshot ? "bg-emerald-500/20 text-emerald-500" : "bg-blue-500/20 text-blue-500"
-              )}>
-                {hasScreenshot ? <CheckCircle className="w-5 h-5" /> : <Loader2 className="w-5 h-5 animate-spin" />}
-              </div>
-              <div>
-                <h4 className="font-semibold text-lg text-zinc-800 dark:text-zinc-200">Browser Initialization</h4>
-                <p className="text-sm text-zinc-500 dark:text-zinc-400">Loading page and capturing screenshots...</p>
-              </div>
-            </div>
-
-            {/* Step 2: Lighthouse Audit */}
+            {/* Step 1: Lighthouse Audit */}
             <div className="flex items-center gap-4">
               <div className={clsx("w-10 h-10 rounded-full flex items-center justify-center transition-colors",
-                hasLighthouse ? "bg-emerald-500/20 text-emerald-500" : hasScreenshot ? "bg-blue-500/20 text-blue-500" : "bg-zinc-200 dark:bg-zinc-800 text-zinc-400"
+                hasLighthouse ? "bg-emerald-500/20 text-emerald-500" : "bg-blue-500/20 text-blue-500 shadow-[0_0_15px_rgba(59,130,246,0.5)]"
               )}>
-                {hasLighthouse ? <CheckCircle className="w-5 h-5" /> : (hasScreenshot ? <Loader2 className="w-5 h-5 animate-spin" /> : <Clock className="w-5 h-5" />)}
+                {hasLighthouse ? <CheckCircle className="w-5 h-5" /> : <Loader2 className="w-5 h-5 animate-spin" />}
               </div>
               <div>
                 <h4 className="font-semibold text-lg text-zinc-800 dark:text-zinc-200">Lighthouse Audit</h4>
-                <p className="text-sm text-zinc-500 dark:text-zinc-400">Benchmarking performance metrics...</p>
+                <p className="text-sm text-zinc-500 dark:text-zinc-400">Benchmarking pure performance metrics...</p>
               </div>
             </div>
 
-            {/* Step 3: AI Analysis */}
-            <div className="flex items-center gap-4">
-              <div className={clsx("w-10 h-10 rounded-full flex items-center justify-center transition-colors",
-                hasAI ? "bg-emerald-500/20 text-emerald-500" : hasLighthouse ? "bg-purple-500/20 text-purple-500" : "bg-zinc-200 dark:bg-zinc-800 text-zinc-400"
-              )}>
-                {hasAI ? <CheckCircle className="w-5 h-5" /> : (hasLighthouse ? <Sparkles className="w-5 h-5 animate-pulse" /> : <Clock className="w-5 h-5" />)}
-              </div>
-              <div>
-                <h4 className="font-semibold text-lg text-zinc-800 dark:text-zinc-200">Gemini AI Analysis</h4>
-                <p className="text-sm text-zinc-500 dark:text-zinc-400">Generating human-friendly insights...</p>
-              </div>
-            </div>
+            {/* Step 2: Web Navigation & Screenshot (Visible after Lighthouse) */}
+            {hasLighthouse && (
+              <motion.div
+                initial={{ opacity: 0, y: 10 }}
+                animate={{ opacity: 1, y: 0 }}
+                className="flex items-center gap-4"
+              >
+                <div className={clsx("w-10 h-10 rounded-full flex items-center justify-center",
+                  hasScreenshot ? "bg-emerald-500/20 text-emerald-500" : "bg-blue-500/20 text-blue-500 shadow-[0_0_15px_rgba(59,130,246,0.5)]"
+                )}>
+                  {hasScreenshot ? <CheckCircle className="w-5 h-5" /> : <Loader2 className="w-5 h-5 animate-spin" />}
+                </div>
+                <div>
+                  <h4 className="font-semibold text-lg text-zinc-800 dark:text-zinc-200">Visual Capture</h4>
+                  <p className="text-sm text-zinc-500 dark:text-zinc-400">Rendering page and capturing screenshot...</p>
+                </div>
+              </motion.div>
+            )}
+
+            {/* Step 3: AI Analysis (Visible after Screenshot) */}
+            {hasScreenshot && (
+              <motion.div
+                initial={{ opacity: 0, y: 10 }}
+                animate={{ opacity: 1, y: 0 }}
+                className="flex items-center gap-4"
+              >
+                <div className={clsx("w-10 h-10 rounded-full flex items-center justify-center transition-colors",
+                  hasAI ? "bg-emerald-500/20 text-emerald-500" : "bg-blue-500/20 text-blue-500 shadow-[0_0_15px_rgba(59,130,246,0.5)]"
+                )}>
+                  {hasAI ? <CheckCircle className="w-5 h-5" /> : <Loader2 className="w-5 h-5 animate-spin" />}
+                </div>
+                <div>
+                  <h4 className="font-semibold text-lg text-zinc-800 dark:text-zinc-200">Gemini AI Analysis</h4>
+                  <p className="text-sm text-zinc-500 dark:text-zinc-400">Generating human-friendly insights...</p>
+                </div>
+              </motion.div>
+            )}
           </div>
 
           <div className="mt-10 w-full h-1.5 bg-zinc-200 dark:bg-zinc-800 rounded-full overflow-hidden">
             <motion.div
               className="h-full bg-blue-500"
               initial={{ width: "0%" }}
-              animate={{ width: hasAI ? "100%" : hasLighthouse ? "66%" : hasScreenshot ? "33%" : "10%" }}
+              animate={{ width: hasAI ? "100%" : hasScreenshot ? "66%" : hasLighthouse ? "33%" : "10%" }}
               transition={{ duration: 0.5, ease: "easeInOut" }}
             />
           </div>
@@ -265,6 +279,14 @@ export default function ResultPage() {
               <span>{new Date(report.created_at).toLocaleString()}</span>
               <span className="bg-emerald-500/10 text-emerald-600 dark:text-emerald-500 px-2 py-0.5 rounded text-xs uppercase font-bold tracking-wide border border-emerald-500/20">
                 {report.status}
+              </span>
+              {/* Device & Network Environment Badge */}
+              <span className="flex items-center gap-1.5 bg-zinc-200/50 dark:bg-zinc-800/50 text-zinc-600 dark:text-zinc-400 px-2.5 py-0.5 rounded text-xs font-semibold border border-zinc-300/30 dark:border-zinc-700/30">
+                {report.device_type === 'mobile' ? <Smartphone className="w-3 h-3" /> : <Monitor className="w-3 h-3" />}
+                {report.device_type === 'mobile' ? 'Mobile' : 'Desktop'}
+                <span className="text-zinc-400 dark:text-zinc-600">·</span>
+                {report.network_type === '4g' ? <Wifi className="w-3 h-3" /> : <Signal className="w-3 h-3" />}
+                {report.network_type === 'slow3g' ? 'Slow 3G' : report.network_type === 'fast3g' ? 'Fast 3G' : '4G'}
               </span>
             </div>
           </div>
@@ -460,17 +482,23 @@ export default function ResultPage() {
               className="space-y-4"
             >
               <h3 className="text-xl font-semibold">Final Screenshot</h3>
-              <div className="bg-zinc-900 border border-zinc-800 rounded-2xl overflow-hidden p-1">
+              <div className={clsx(
+                "bg-zinc-900 border border-zinc-800 rounded-2xl overflow-y-auto w-full flex justify-center p-1 scrollbar-thin scrollbar-thumb-zinc-700 scrollbar-track-transparent",
+                report.device_type === 'mobile' ? "max-h-[600px] max-w-sm mx-auto" : ""
+              )}>
                 <Image
                   src={report.screenshot.startsWith('http')
                     ? report.screenshot.replace(/^https?:\/\/[^/]+/, '')
                     : report.screenshot}
                   alt="Full Page Screenshot"
-                  width={1200}
-                  height={800}
-                  className="w-full h-auto rounded-lg"
-                  sizes="(max-width: 768px) 100vw, 1200px"
-                  style={{ width: '100%', height: 'auto' }}
+                  width={report.device_type === 'mobile' ? 390 : 1200}
+                  height={report.device_type === 'mobile' ? 844 : 800}
+                  className={clsx(
+                    "rounded-lg",
+                    report.device_type === 'mobile' ? "w-full object-contain" : "w-full h-auto"
+                  )}
+                  sizes={report.device_type === 'mobile' ? "390px" : "(max-width: 768px) 100vw, 1200px"}
+                  style={{ width: report.device_type === 'mobile' ? '100%' : '100%', height: 'auto' }}
                   priority
                 />
               </div>

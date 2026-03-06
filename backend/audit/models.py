@@ -11,8 +11,21 @@ class Report(models.Model):
         ('failed', 'Failed'),
     )
 
+    DEVICE_CHOICES = (
+        ('desktop', 'Desktop'),
+        ('mobile', 'Mobile'),
+    )
+
+    NETWORK_CHOICES = (
+        ('4g', '4G'),
+        ('fast3g', 'Fast 3G'),
+        ('slow3g', 'Slow 3G'),
+    )
+
     url = models.URLField()
     status = models.CharField(max_length=20, choices=STATUS_CHOICES, default='pending')
+    device_type = models.CharField(max_length=10, choices=DEVICE_CHOICES, default='desktop')
+    network_type = models.CharField(max_length=10, choices=NETWORK_CHOICES, default='4g')
     performance_score = models.IntegerField(null=True, blank=True)
     lighthouse_json = models.JSONField(null=True, blank=True)
     ai_summary = models.TextField(null=True, blank=True)

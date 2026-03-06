@@ -4,11 +4,17 @@ import { useState } from 'react';
 import { useRouter } from 'next/navigation';
 import axios from 'axios';
 import { motion } from 'framer-motion';
-import { ArrowRight, Loader2 } from 'lucide-react';
+import { ArrowRight, Loader2, Monitor, Smartphone, Wifi, Signal } from 'lucide-react';
+import clsx from 'clsx';
 import ThemeToggle from '@/components/ThemeToggle';
+
+type DeviceType = 'desktop' | 'mobile';
+type NetworkType = '4g' | 'fast3g' | 'slow3g';
 
 export default function Home() {
   const [url, setUrl] = useState('');
+  const [deviceType, setDeviceType] = useState<DeviceType>('desktop');
+  const [networkType, setNetworkType] = useState<NetworkType>('4g');
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const router = useRouter();
@@ -21,7 +27,11 @@ export default function Home() {
     setError(null);
     try {
       const apiUrl = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000';
-      const response = await axios.post(`${apiUrl}/api/reports/`, { url });
+      const response = await axios.post(`${apiUrl}/api/reports/`, {
+        url,
+        device_type: deviceType,
+        network_type: networkType,
+      });
       router.push(`/results/${response.data.id}`);
     } catch (err: unknown) {
       console.error('Error creating report:', err);
@@ -30,6 +40,17 @@ export default function Home() {
       setLoading(false);
     }
   };
+
+  const deviceOptions: { value: DeviceType; label: string; icon: React.ReactNode }[] = [
+    { value: 'desktop', label: 'Desktop', icon: <Monitor className="w-4 h-4" /> },
+    { value: 'mobile', label: 'Mobile', icon: <Smartphone className="w-4 h-4" /> },
+  ];
+
+  const networkOptions: { value: NetworkType; label: string; icon: React.ReactNode; desc: string }[] = [
+    { value: '4g', label: '4G', icon: <Wifi className="w-4 h-4" />, desc: '9 Mbps' },
+    { value: 'fast3g', label: 'Fast 3G', icon: <Signal className="w-4 h-4" />, desc: '1.6 Mbps' },
+    { value: 'slow3g', label: 'Slow 3G', icon: <Signal className="w-3 h-3" />, desc: '400 kbps' },
+  ];
 
   return (
     <main className="flex min-h-screen flex-col items-center justify-center p-4 bg-zinc-50 dark:bg-zinc-950 text-zinc-900 dark:text-zinc-100 transition-colors">
@@ -55,29 +76,84 @@ export default function Home() {
           animate={{ opacity: 1, y: 0 }}
           transition={{ duration: 0.5, delay: 0.2 }}
           onSubmit={handleSubmit}
-          className="flex flex-col sm:flex-row gap-4 justify-center items-center mt-10"
+          className="space-y-6"
         >
-          <input
-            type="url"
-            placeholder="Enter website URL (e.g., https://example.com)"
-            value={url}
-            onChange={(e) => setUrl(e.target.value)}
-            required
-            className="w-full sm:w-96 px-6 py-4 rounded-full bg-zinc-100 dark:bg-zinc-900 border border-zinc-300 dark:border-zinc-800 focus:outline-none focus:border-blue-500 focus:ring-1 focus:ring-blue-500 transition-all text-lg placeholder:text-zinc-500 dark:placeholder:text-zinc-600 text-foreground"
-          />
-          <button
-            type="submit"
-            disabled={loading}
-            className="px-8 py-4 rounded-full bg-blue-600 hover:bg-blue-500 text-white font-medium transition-colors flex items-center gap-2 disabled:opacity-50 disabled:cursor-not-allowed"
+          {/* URL Input */}
+          <div className="flex flex-col sm:flex-row gap-4 justify-center items-center">
+            <input
+              type="url"
+              placeholder="Enter website URL (e.g., https://example.com)"
+              value={url}
+              onChange={(e) => setUrl(e.target.value)}
+              required
+              className="w-full sm:w-96 px-6 py-4 rounded-full bg-zinc-100 dark:bg-zinc-900 border border-zinc-300 dark:border-zinc-800 focus:outline-none focus:border-blue-500 focus:ring-1 focus:ring-blue-500 transition-all text-lg placeholder:text-zinc-500 dark:placeholder:text-zinc-600 text-foreground"
+            />
+            <button
+              type="submit"
+              disabled={loading}
+              className="px-8 py-4 rounded-full bg-blue-600 hover:bg-blue-500 text-white font-medium transition-colors flex items-center gap-2 disabled:opacity-50 disabled:cursor-not-allowed"
+            >
+              {loading ? (
+                <Loader2 className="animate-spin w-5 h-5" />
+              ) : (
+                <>
+                  Analyze <ArrowRight className="w-5 h-5" />
+                </>
+              )}
+            </button>
+          </div>
+
+          {/* Device & Network Selectors */}
+          <motion.div
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            transition={{ duration: 0.4, delay: 0.35 }}
+            className="flex flex-col sm:flex-row gap-6 justify-center items-center"
           >
-            {loading ? (
-              <Loader2 className="animate-spin w-5 h-5" />
-            ) : (
-              <>
-                Analyze <ArrowRight className="w-5 h-5" />
-              </>
-            )}
-          </button>
+            {/* Device Type */}
+            <div className="flex items-center gap-3">
+              <span className="text-xs font-bold uppercase tracking-widest text-zinc-400 dark:text-zinc-500">Device</span>
+              <div className="flex items-center gap-1 bg-zinc-100 dark:bg-zinc-900/80 p-1 border border-zinc-200 dark:border-zinc-800 rounded-full">
+                {deviceOptions.map((opt) => (
+                  <button
+                    key={opt.value}
+                    type="button"
+                    onClick={() => setDeviceType(opt.value)}
+                    className={clsx(
+                      "flex items-center gap-1.5 px-4 py-2 text-xs font-bold uppercase rounded-full transition-all",
+                      deviceType === opt.value
+                        ? "bg-white dark:bg-zinc-800 text-zinc-900 dark:text-zinc-100 shadow-sm border border-zinc-200 dark:border-zinc-700"
+                        : "text-zinc-400 dark:text-zinc-500 hover:text-zinc-800 dark:hover:text-zinc-300"
+                    )}
+                  >
+                    {opt.icon} {opt.label}
+                  </button>
+                ))}
+              </div>
+            </div>
+
+            {/* Network Type */}
+            <div className="flex items-center gap-3">
+              <span className="text-xs font-bold uppercase tracking-widest text-zinc-400 dark:text-zinc-500">Network</span>
+              <div className="flex items-center gap-1 bg-zinc-100 dark:bg-zinc-900/80 p-1 border border-zinc-200 dark:border-zinc-800 rounded-full">
+                {networkOptions.map((opt) => (
+                  <button
+                    key={opt.value}
+                    type="button"
+                    onClick={() => setNetworkType(opt.value)}
+                    className={clsx(
+                      "flex items-center gap-1.5 px-3 py-2 text-xs font-bold uppercase rounded-full transition-all",
+                      networkType === opt.value
+                        ? "bg-white dark:bg-zinc-800 text-zinc-900 dark:text-zinc-100 shadow-sm border border-zinc-200 dark:border-zinc-700"
+                        : "text-zinc-400 dark:text-zinc-500 hover:text-zinc-800 dark:hover:text-zinc-300"
+                    )}
+                  >
+                    {opt.icon} {opt.label}
+                  </button>
+                ))}
+              </div>
+            </div>
+          </motion.div>
         </motion.form>
 
         {error && (
