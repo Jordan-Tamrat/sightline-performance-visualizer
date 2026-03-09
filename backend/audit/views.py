@@ -13,6 +13,33 @@ class ReportViewSet(viewsets.ModelViewSet):
         report = serializer.save()
         run_audit.delay(report.id)
 
+    @action(detail=False, methods=['get'])
+    def history(self, request):
+        """
+        Returns a list of reports matching the provided user_identifier.
+        Expects ?user_identifier=<uuid> query parameter.
+        """
+        user_identifier = request.query_params.get('user_identifier')
+        if not user_identifier:
+            return Response({'error': 'user_identifier parameter is required'}, status=400)
+
+        # Filter reports by user_identifier, order by newest first, limit to last 20
+        reports = Report.objects.filter(user_identifier=user_identifier).order_by('-created_at')[:20]
+        
+        # Serialize only the fields needed for the history table
+        data = [
+            {
+                'id': r.id,
+                'url': r.url,
+                'device_type': r.device_type,
+                'network_type': r.network_type,
+                'performance_score': r.performance_score,
+                'created_at': r.created_at
+            }
+            for r in reports
+        ]
+        return Response(data)
+
     @action(detail=True, methods=['get'])
     def filmstrip(self, request, pk=None):
         """

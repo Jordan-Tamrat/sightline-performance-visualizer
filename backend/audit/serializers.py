@@ -6,4 +6,4 @@ class ReportSerializer(serializers.ModelSerializer):
         model = Report
         fields = '__all__'
         read_only_fields = ('status', 'performance_score', 'lighthouse_json', 'ai_summary', 'screenshot', 'created_at')
-        # url, device_type, network_type are writable on creation
+        # url, device_type, network_type, user_identifier are writable on creation

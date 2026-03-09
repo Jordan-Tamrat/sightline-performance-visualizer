@@ -24,6 +24,7 @@ class Report(models.Model):
 
     url = models.URLField()
     status = models.CharField(max_length=20, choices=STATUS_CHOICES, default='pending')
+    user_identifier = models.CharField(max_length=64, db_index=True, null=True, blank=True)
     device_type = models.CharField(max_length=10, choices=DEVICE_CHOICES, default='desktop')
     network_type = models.CharField(max_length=10, choices=NETWORK_CHOICES, default='4g')
     performance_score = models.IntegerField(null=True, blank=True)

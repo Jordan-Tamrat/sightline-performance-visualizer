@@ -67,6 +67,7 @@ def run_lighthouse(url, report_id, network_preset, port=9222, chrome_path=None, 
         "--only-categories=performance,accessibility,best-practices,seo",
         "--save-assets",
         "--disable-full-page-screenshot",
+        "--max-wait-for-load=180000",
         
         # Enable DevTools throttling and pass custom dynamic parameters
         "--throttling-method=devtools",
@@ -98,14 +99,14 @@ def run_lighthouse(url, report_id, network_preset, port=9222, chrome_path=None, 
         print(f"Lighthouse using CHROME_PATH: {chrome_path}")
     
     try:
-        # Added timeout=180s protection (increased for trace generation)
+        # Added timeout=210s protection (increased for trace generation)
         subprocess.run(
             cmd, 
             check=True, 
             stdout=subprocess.PIPE, 
             stderr=subprocess.PIPE, 
             env=env,
-            timeout=180
+            timeout=210
         )
     except subprocess.TimeoutExpired:
         raise Exception("Lighthouse audit timed out after 180 seconds.")
@@ -217,7 +218,8 @@ def generate_ai_summary(lighthouse_data, url):
             f"2. If no major issues are listed, clearly state that performance is strong and no critical bottlenecks were detected.\n"
             f"3. Prioritize the most severe issues first.\n"
             f"4. Keep the tone professional and factual.\n"
-            f"5. Do NOT exaggerate business impact.\n\n"
+            f"5. Do NOT exaggerate business impact.\n"
+            f"6. CRITICAL: You must output strictly valid JSON. Ensure any internal double-quotes inside strings are properly escaped as \\\".\n\n"
             f"OUTPUT FORMAT (JSON ONLY):\n"
             f"{{\n"
             f'  "overall_assessment": "Short 1-2 sentence summary of the overall performance.",\n'
@@ -225,8 +227,8 @@ def generate_ai_summary(lighthouse_data, url):
             f'    {{\n'
             f'      "title": "Issue Name (e.g. Reduce Unused JavaScript)",\n'
             f'      "explanation": "Brief explanation of what is happening.",\n'
-            f'      "impact": "Specific business impact (e.g. Slows down initial page load, increasing bounce rate).",\n'
-            f'      "suggestion": "Specific technical recommendation on how to fix this issue (e.g. Use Next.js Script component with strategy=\'lazyOnload\').",\n'
+            f'      "impact": "Specific business impact (e.g. Slows down initial page load).",\n'
+            f'      "suggestion": "Specific technical recommendation on how to fix this issue.",\n'
             f'      "severity": "High" | "Medium" | "Low"\n'
             f'    }}\n'
             f'  ]\n'
@@ -236,18 +238,14 @@ def generate_ai_summary(lighthouse_data, url):
         
         response = model.generate_content(prompt)
         
-        # Clean response if it contains markdown code blocks
+        # Robustly extract JSON object between first { and last }
         text = response.text.strip()
-        # Remove potential markdown code blocks
-        if text.startswith("```json"):
-            text = text[7:]
-        elif text.startswith("```"):
-            text = text[3:]
-        if text.endswith("```"):
-            text = text[:-3]
-            
-        # Additional cleanup for safety
-        text = text.strip()
+        start_idx = text.find('{')
+        end_idx = text.rfind('}')
+        if start_idx != -1 and end_idx != -1:
+            text = text[start_idx:end_idx+1]
+        else:
+            raise ValueError("No valid JSON object found in response.")
             
         return text
     except Exception as e:
@@ -259,7 +257,7 @@ def generate_ai_summary(lighthouse_data, url):
         }
         return json.dumps(fallback)
 
-@shared_task(bind=True, max_retries=3, default_retry_delay=30)
+@shared_task(bind=True, max_retries=0, default_retry_delay=30)
 def run_audit(self, report_id):
     # CRITICAL: Playwright uses an async event loop internally even in its sync API.
     # This conflicts with Django's synchronous database safety checks.

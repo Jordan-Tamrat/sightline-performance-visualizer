@@ -7,7 +7,6 @@ import axios from 'axios';
 import { motion, AnimatePresence } from 'framer-motion';
 import { Loader2, AlertCircle, CheckCircle, Clock, Sparkles, Monitor, Smartphone, Wifi, Signal } from 'lucide-react';
 import clsx from 'clsx';
-import ThemeToggle from '@/components/ThemeToggle';
 import Gauge from '../../../components/Gauge';
 import ScoreGrid, { ScoreGridProps } from '@/components/ScoreGrid';
 import WebVitalsGrid, { WebVitalsGridProps } from '@/components/WebVitalsGrid';
@@ -60,13 +59,14 @@ export default function ResultPage() {
   const aiSummary: AISummary | null = (() => {
     if (!report?.ai_summary) return null;
     try {
-      // Handle potentially double-stringified JSON or weird markdown formatting
       let cleanJson = report.ai_summary.trim();
 
-      // Remove markdown code blocks if they exist (backup for backend cleaning)
-      if (cleanJson.startsWith('```json')) cleanJson = cleanJson.slice(7);
-      if (cleanJson.startsWith('```')) cleanJson = cleanJson.slice(3);
-      if (cleanJson.endsWith('```')) cleanJson = cleanJson.slice(0, -3);
+      // Extract the JSON object robustly by finding the first '{' and last '}'
+      const firstBrace = cleanJson.indexOf('{');
+      const lastBrace = cleanJson.lastIndexOf('}');
+      if (firstBrace !== -1 && lastBrace !== -1) {
+        cleanJson = cleanJson.slice(firstBrace, lastBrace + 1);
+      }
 
       return JSON.parse(cleanJson);
     } catch (e) {
@@ -291,7 +291,6 @@ export default function ResultPage() {
             </div>
           </div>
           <div className="flex items-center gap-4">
-            <ThemeToggle />
             <button
               onClick={() => window.location.href = '/'}
               className="px-4 py-2 bg-zinc-200 dark:bg-zinc-900 hover:bg-zinc-300 dark:hover:bg-zinc-800 border border-zinc-300 dark:border-zinc-800 text-zinc-900 dark:text-zinc-100 rounded-lg transition-colors text-sm font-medium"

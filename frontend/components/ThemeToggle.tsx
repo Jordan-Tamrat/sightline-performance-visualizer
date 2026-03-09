@@ -4,11 +4,10 @@ import { useEffect, useState } from 'react';
 import { Moon, Sun } from 'lucide-react';
 import { motion } from 'framer-motion';
 
-export default function ThemeToggle() {
+export default function ThemeToggle({ showLabel = false }: { showLabel?: boolean }) {
     const [mounted, setMounted] = useState(false);
     const [theme, setTheme] = useState<'light' | 'dark'>('dark');
 
-    // Wait until mounted to access window/localStorage to avoid hydration mismatch
     useEffect(() => {
         setMounted(true);
         const saved = localStorage.getItem('theme');
@@ -19,8 +18,7 @@ export default function ThemeToggle() {
 
     useEffect(() => {
         if (!mounted) return;
-        
-        // apply theme class whenever the value changes
+
         if (theme === 'dark') {
             document.documentElement.classList.add('dark');
             localStorage.setItem('theme', 'dark');
@@ -48,25 +46,34 @@ export default function ThemeToggle() {
     };
 
     if (!mounted) {
-        // Render a placeholder or nothing during SSR to match initial server HTML
-        // This prevents the "sun vs moon" mismatch
         return (
-            <div className="w-9 h-9 p-2 rounded-full bg-zinc-200 dark:bg-zinc-800" aria-hidden="true" />
+            <div className={`flex items-center ${showLabel ? 'gap-3' : ''}`}>
+                <div className="w-9 h-9 p-2 rounded-full bg-zinc-200 dark:bg-zinc-800" aria-hidden="true" />
+                {showLabel && <span className="text-sm font-medium text-zinc-500 dark:text-zinc-400">Theme</span>}
+            </div>
         );
     }
 
     return (
-        <motion.button
-            whileTap={{ scale: 0.9 }}
-            onClick={toggleTheme}
-            className="p-2 rounded-full bg-zinc-200 dark:bg-zinc-800 text-zinc-800 dark:text-zinc-200 hover:bg-zinc-300 dark:hover:bg-zinc-700 transition-colors focus:outline-none focus:ring-2 focus:ring-blue-500"
-            aria-label="Toggle theme"
-        >
-            {theme === 'dark' ? (
-                <Sun className="w-5 h-5" />
-            ) : (
-                <Moon className="w-5 h-5" />
+        <div className={`flex items-center ${showLabel ? 'gap-3' : ''}`}>
+            <motion.button
+                whileTap={{ scale: 0.9 }}
+                onClick={toggleTheme}
+                className="p-2 w-9 h-9 flex items-center justify-center rounded-full bg-zinc-200 dark:bg-zinc-800 text-zinc-800 dark:text-zinc-200 hover:bg-zinc-300 dark:hover:bg-zinc-700 transition-colors focus:outline-none focus:ring-2 focus:ring-blue-500"
+                aria-label={`Switch to ${theme === 'dark' ? 'light' : 'dark'} mode`}
+            >
+                {theme === 'dark' ? (
+                    <Moon className="w-5 h-5 text-blue-400" />
+                ) : (
+                    <Sun className="w-5 h-5 text-amber-500" />
+                )}
+            </motion.button>
+            
+            {showLabel && (
+                <span className="text-sm font-medium text-zinc-800 dark:text-zinc-200">
+                    {theme === 'dark' ? 'Dark' : 'Light'}
+                </span>
             )}
-        </motion.button>
+        </div>
     );
 }

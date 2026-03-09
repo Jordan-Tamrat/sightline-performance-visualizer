@@ -7,6 +7,7 @@ import { motion } from 'framer-motion';
 import { ArrowRight, Loader2, Monitor, Smartphone, Wifi, Signal } from 'lucide-react';
 import clsx from 'clsx';
 import ThemeToggle from '@/components/ThemeToggle';
+import { getOrCreateUserIdentifier } from '@/lib/user';
 
 type DeviceType = 'desktop' | 'mobile';
 type NetworkType = '4g' | 'fast3g' | 'slow3g';
@@ -26,11 +27,13 @@ export default function Home() {
     setLoading(true);
     setError(null);
     try {
+      const userIdentifier = getOrCreateUserIdentifier();
       const apiUrl = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000';
       const response = await axios.post(`${apiUrl}/api/reports/`, {
         url,
         device_type: deviceType,
         network_type: networkType,
+        user_identifier: userIdentifier,
       });
       router.push(`/results/${response.data.id}`);
     } catch (err: unknown) {
