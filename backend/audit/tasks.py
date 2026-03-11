@@ -7,6 +7,8 @@ import os
 import google.generativeai as genai
 from playwright.sync_api import sync_playwright
 from django.core.files import File
+from django.utils import timezone
+from datetime import timedelta
 import time
 
 # ─── Device and Network Configuration ───────────────────────────────────────
@@ -329,7 +331,7 @@ def run_audit(self, report_id):
         
         try:
             # Navigate quickly just to get the visual state
-            page.goto(url, timeout=60000, wait_until='networkidle')
+            page.goto(url, timeout=120000, wait_until='networkidle')
             
             # Take a high-quality screenshot
             page.screenshot(path=screenshot_path, full_page=False)
@@ -393,3 +395,20 @@ def run_audit(self, report_id):
         if lighthouse_report_path and os.path.exists(lighthouse_report_path):
             try: os.remove(lighthouse_report_path)
             except: pass
+
+@shared_task
+def cleanup_old_reports():
+    """Deletes reports older than 15 days, including their screenshot files."""
+    threshold = timezone.now() - timedelta(days=15)
+    old_reports = Report.objects.filter(created_at__lt=threshold)
+    count = old_reports.count()
+    
+    for report in old_reports:
+        if report.screenshot:
+            try:
+                report.screenshot.delete(save=False)
+            except Exception as e:
+                print(f"Failed to delete screenshot for report {report.id}: {e}")
+        report.delete()
+        
+    return f"Deleted {count} reports and their associated screenshots older than 15 days."

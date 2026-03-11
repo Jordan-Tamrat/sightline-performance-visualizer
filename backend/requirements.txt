@@ -8,5 +8,6 @@ google-generativeai
 gunicorn
 django-cors-headers
 django-celery-results
+django-celery-beat
 requests
 Pillow

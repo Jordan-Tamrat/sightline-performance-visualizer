@@ -13,6 +13,7 @@ https://docs.djangoproject.com/en/6.0/ref/settings/
 from pathlib import Path
 import os
 from django.core.exceptions import ImproperlyConfigured
+from celery.schedules import crontab
 
 # Build paths inside the project like this: BASE_DIR / 'subdir'.
 # BASE_DIR is now one level deeper due to settings package
@@ -33,6 +34,7 @@ INSTALLED_APPS = [
     'rest_framework',
     'corsheaders',
     'django_celery_results',
+    'django_celery_beat',
     
     # Local apps
     'audit',
@@ -136,6 +138,13 @@ CELERY_ACCEPT_CONTENT = ['application/json']
 CELERY_TASK_SERIALIZER = 'json'
 CELERY_RESULT_SERIALIZER = 'json'
 CELERY_TIMEZONE = TIME_ZONE
+
+CELERY_BEAT_SCHEDULE = {
+    'cleanup-old-reports-weekly': {
+        'task': 'audit.tasks.cleanup_old_reports',
+        'schedule': crontab(hour=0, minute=0, day_of_week='monday'),
+    },
+}
 
 # Gemini API Key
 GEMINI_API_KEY = os.environ.get('GEMINI_API_KEY')

@@ -46,6 +46,27 @@ services:
       - backend
       - redis
 
+  celery_beat:
+    build: ./backend
+    command: celery -A sightline beat -l info --scheduler django_celery_beat.schedulers:DatabaseScheduler
+    volumes:
+      - ./backend:/app
+    environment:
+      - DEBUG=1
+      - SECRET_KEY=django-insecure-secret-key
+      - CELERY_BROKER_URL=redis://redis:6379/0
+      - CELERY_RESULT_BACKEND=redis://redis:6379/0
+      - DATABASE_NAME=sightline
+      - DATABASE_USER=sightline
+      - DATABASE_PASSWORD=sightline
+      - DATABASE_HOST=db
+      - DATABASE_PORT=5432
+      - GEMINI_API_KEY=${GEMINI_API_KEY}
+      - DJANGO_ALLOWED_HOSTS=localhost 127.0.0.1 [::1] backend
+    depends_on:
+      - backend
+      - redis
+
   db:
     image: postgres:15-alpine
     volumes:
