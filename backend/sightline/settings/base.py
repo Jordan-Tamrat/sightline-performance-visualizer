@@ -144,7 +144,14 @@ CELERY_BEAT_SCHEDULE = {
         'task': 'audit.tasks.cleanup_old_reports',
         'schedule': crontab(hour=0, minute=0, day_of_week='monday'),
     },
+    'cleanup-expired-shares-daily': {
+        'task': 'audit.tasks.cleanup_expired_shares',
+        'schedule': crontab(hour=0, minute=0),
+    },
 }
 
 # Gemini API Key
 GEMINI_API_KEY = os.environ.get('GEMINI_API_KEY')
+
+# Base URL for Share Links
+BASE_URL = os.environ.get("BASE_URL", "http://localhost:3000")

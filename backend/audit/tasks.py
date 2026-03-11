@@ -1,6 +1,6 @@
 from celery import shared_task
 from django.conf import settings
-from .models import Report
+from .models import Report, SharedReport
 import subprocess
 import json
 import os
@@ -412,3 +412,12 @@ def cleanup_old_reports():
         report.delete()
         
     return f"Deleted {count} reports and their associated screenshots older than 15 days."
+
+@shared_task
+def cleanup_expired_shares():
+    """Deletes shared reports that have expired."""
+    threshold = timezone.now()
+    expired_shares = SharedReport.objects.filter(expires_at__lt=threshold)
+    count = expired_shares.count()
+    expired_shares.delete()
+    return f"Deleted {count} expired share links."

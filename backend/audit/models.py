@@ -1,3 +1,5 @@
+import uuid
+import secrets
 from django.db import models
 
 class Report(models.Model):
@@ -35,3 +37,21 @@ class Report(models.Model):
 
     def __str__(self):
         return f"{self.url} - {self.status}"
+
+def generate_share_token():
+    return secrets.token_urlsafe(32)
+
+class SharedReport(models.Model):
+    class Meta:
+        app_label = 'audit'
+
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    report = models.ForeignKey(Report, on_delete=models.CASCADE, related_name='shared_links')
+    share_token = models.CharField(max_length=64, unique=True, db_index=True, default=generate_share_token)
+    created_at = models.DateTimeField(auto_now_add=True)
+    expires_at = models.DateTimeField()
+    views = models.IntegerField(default=0)
+    is_active = models.BooleanField(default=True)
+
+    def __str__(self):
+        return f"Share Link for {self.report.id} - Expires: {self.expires_at}"

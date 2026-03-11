@@ -1,11 +1,11 @@
 'use client';
 
 import Image from 'next/image';
-import { useEffect, useState } from 'react';
-import { useParams } from 'next/navigation';
+import { useEffect, useState, useRef } from 'react';
+import { useParams, useSearchParams } from 'next/navigation';
 import axios from 'axios';
 import { motion, AnimatePresence } from 'framer-motion';
-import { Loader2, AlertCircle, CheckCircle, Clock, Sparkles, Monitor, Smartphone, Wifi, Signal } from 'lucide-react';
+import { Loader2, AlertCircle, CheckCircle, Clock, Sparkles, Monitor, Smartphone, Wifi, Signal, Share2, Copy, Check, ExternalLink } from 'lucide-react';
 import clsx from 'clsx';
 import Gauge from '../../../components/Gauge';
 import ScoreGrid, { ScoreGridProps } from '@/components/ScoreGrid';
@@ -52,6 +52,12 @@ export default function ResultPage() {
   const [hasRevealed, setHasRevealed] = useState(false);
   const [filmstrip, setFilmstrip] = useState<{ data: string; timing: number }[]>([]);
   const [loadingFilmstrip, setLoadingFilmstrip] = useState(false);
+  
+  // Share state
+  const [isSharing, setIsSharing] = useState(false);
+  const [shareData, setShareData] = useState<{ url: string; expiresAt: string } | null>(null);
+  const [shareError, setShareError] = useState('');
+  const [copied, setCopied] = useState(false);
 
   const apiUrl = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000';
 
@@ -146,8 +152,47 @@ export default function ResultPage() {
     }
   }, [report?.status, hasRevealed, id, apiUrl]);
 
-  // Show analysis view only if not finished
+  const handleShare = async () => {
+    setIsSharing(true);
+    setShareError('');
+    try {
+      const userIdentifier = localStorage.getItem('sightline_user_id');
+      const response = await axios.post(`${apiUrl}/api/reports/${id}/share/`, {
+        user_identifier: userIdentifier
+      });
+      setShareData({
+        url: response.data.share_url,
+        expiresAt: response.data.expires_at
+      });
+    } catch (err: any) {
+      setShareError(err.response?.data?.error || 'Failed to generate share link');
+    } finally {
+      setIsSharing(false);
+    }
+  };
+
+  const copyToClipboard = () => {
+    if (shareData) {
+      navigator.clipboard.writeText(shareData.url);
+      setCopied(true);
+      setTimeout(() => setCopied(false), 2000);
+    }
+  };
+
+  const searchParams = useSearchParams();
+  const autoShare = searchParams?.get('share') === 'true';
   const isFinished = report?.status === 'completed' || report?.status === 'failed';
+  const hasAutoShared = useRef(false);
+
+  useEffect(() => {
+    if (isFinished && autoShare && !isSharing && !shareData && !shareError && !hasAutoShared.current) {
+      hasAutoShared.current = true;
+      handleShare();
+    }
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [isFinished, autoShare]);
+
+  // Show analysis view only if not finished
   if (!isFinished) {
     // Determine active steps
     const hasScreenshot = !!report?.screenshot;
@@ -290,10 +335,18 @@ export default function ResultPage() {
               </span>
             </div>
           </div>
-          <div className="flex items-center gap-4">
+          <div className="flex items-center gap-3">
+            <button
+              onClick={handleShare}
+              disabled={isSharing}
+              className="px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-lg transition-colors text-sm font-medium flex items-center gap-2 shadow-sm disabled:opacity-70 disabled:cursor-not-allowed cursor-pointer"
+            >
+              {isSharing ? <Loader2 className="w-4 h-4 animate-spin" /> : <Share2 className="w-4 h-4" />}
+              Share Report
+            </button>
             <button
               onClick={() => window.location.href = '/'}
-              className="px-4 py-2 bg-zinc-200 dark:bg-zinc-900 hover:bg-zinc-300 dark:hover:bg-zinc-800 border border-zinc-300 dark:border-zinc-800 text-zinc-900 dark:text-zinc-100 rounded-lg transition-colors text-sm font-medium"
+              className="px-4 py-2 bg-zinc-200 dark:bg-zinc-900 hover:bg-zinc-300 dark:hover:bg-zinc-800 border border-zinc-300 dark:border-zinc-800 text-zinc-900 dark:text-zinc-100 rounded-lg transition-colors text-sm font-medium cursor-pointer"
             >
               New Audit
             </button>
@@ -505,6 +558,91 @@ export default function ResultPage() {
           )}
         </div>
       </div>
+      
+      {/* Share Modal */}
+      <AnimatePresence>
+        {shareData && (
+          <motion.div
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            exit={{ opacity: 0 }}
+            className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm p-4"
+          >
+            <motion.div
+              initial={{ scale: 0.95, opacity: 0 }}
+              animate={{ scale: 1, opacity: 1 }}
+              exit={{ scale: 0.95, opacity: 0 }}
+              className="bg-zinc-50 dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-800 rounded-2xl p-6 shadow-2xl max-w-md w-full"
+            >
+              <div className="flex justify-between items-start mb-4">
+                <h3 className="text-xl font-bold flex items-center gap-2">
+                  <Share2 className="w-5 h-5 text-blue-500" />
+                  Share Report
+                </h3>
+                <button 
+                  onClick={() => setShareData(null)}
+                  className="p-1 hover:bg-zinc-200 dark:hover:bg-zinc-800 rounded-lg text-zinc-500 transition-colors cursor-pointer"
+                >
+                  ✕
+                </button>
+              </div>
+              
+              <p className="text-sm text-zinc-600 dark:text-zinc-400 mb-6 font-medium">
+                Anyone with this link can view the report. <br/>
+                <span className="text-red-500 flex flex-wrap items-center gap-1 mt-1 font-semibold">
+                  <Clock className="w-3 h-3" /> Expires on {new Date(shareData.expiresAt).toLocaleDateString()} at {new Date(shareData.expiresAt).toLocaleTimeString()}
+                </span>
+              </p>
+
+              <div className="flex items-center gap-2 bg-zinc-200/50 dark:bg-zinc-950/50 p-2 rounded-xl mb-6 border border-zinc-300 dark:border-zinc-800 text-sm">
+                <input 
+                  type="text" 
+                  readOnly 
+                  value={shareData.url} 
+                  className="bg-transparent flex-1 text-zinc-800 dark:text-zinc-300 outline-none px-2 font-mono text-xs w-full"
+                />
+              </div>
+
+              <div className="flex gap-3">
+                <button
+                  onClick={copyToClipboard}
+                  className="flex-1 flex items-center justify-center gap-2 bg-zinc-800 hover:bg-zinc-700 text-white py-2.5 rounded-lg font-medium transition-all cursor-pointer"
+                >
+                  {copied ? <Check className="w-4 h-4 text-emerald-400" /> : <Copy className="w-4 h-4" />}
+                  {copied ? 'Copied!' : 'Copy Link'}
+                </button>
+                <a
+                  href={shareData.url}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="flex-1 flex items-center justify-center gap-2 bg-blue-600 hover:bg-blue-700 text-white py-2.5 rounded-lg font-medium transition-all"
+                >
+                  <ExternalLink className="w-4 h-4" />
+                  Open Link
+                </a>
+              </div>
+            </motion.div>
+          </motion.div>
+        )}
+      </AnimatePresence>
+      
+      {/* Share Error Toast */}
+      <AnimatePresence>
+        {shareError && (
+          <motion.div
+            initial={{ opacity: 0, y: 50 }}
+            animate={{ opacity: 1, y: 0 }}
+            exit={{ opacity: 0, y: 50 }}
+            className="fixed bottom-6 right-6 bg-red-500 text-white px-4 py-3 rounded-xl shadow-lg flex items-center gap-3 z-50 font-medium text-sm"
+          >
+            <AlertCircle className="w-5 h-5" />
+            {shareError}
+            <button onClick={() => setShareError('')} className="ml-2 hover:bg-red-600 p-1 rounded-md transition-colors cursor-pointer">
+              ✕
+            </button>
+          </motion.div>
+        )}
+      </AnimatePresence>
     </div>
   );
 }

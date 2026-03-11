@@ -1,8 +1,13 @@
 from rest_framework import viewsets
 from rest_framework.decorators import action
 from rest_framework.response import Response
-from .models import Report
-from .serializers import ReportSerializer
+from rest_framework.views import APIView
+from django.shortcuts import get_object_or_404
+from django.utils import timezone
+from datetime import timedelta
+from django.conf import settings
+from .models import Report, SharedReport
+from .serializers import ReportSerializer, SharedReportSerializer
 from .tasks import run_audit
 
 class ReportViewSet(viewsets.ModelViewSet):
@@ -12,6 +17,41 @@ class ReportViewSet(viewsets.ModelViewSet):
     def perform_create(self, serializer):
         report = serializer.save()
         run_audit.delay(report.id)
+
+    @action(detail=True, methods=['post'])
+    def share(self, request, pk=None):
+        """Generates a shareable link that expires in 15 days."""
+        report = self.get_object()
+        
+        # Validate ownership
+        user_identifier = request.data.get('user_identifier')
+        if report.user_identifier and user_identifier != report.user_identifier:
+            return Response({'error': 'Unauthorized to share this report.'}, status=403)
+            
+        # Check for existing active share
+        existing_share = SharedReport.objects.filter(
+            report=report,
+            is_active=True,
+            expires_at__gt=timezone.now()
+        ).first()
+
+        if existing_share:
+            share_url = f"{settings.BASE_URL}/share/{existing_share.share_token}"
+            return Response({
+                'share_url': share_url,
+                'expires_at': existing_share.expires_at
+            })
+
+        shared_report = SharedReport.objects.create(
+            report=report,
+            expires_at=timezone.now() + timedelta(days=15)
+        )
+        
+        share_url = f"{settings.BASE_URL}/share/{shared_report.share_token}"
+        return Response({
+            'share_url': share_url,
+            'expires_at': shared_report.expires_at
+        })
 
     @action(detail=False, methods=['get'])
     def history(self, request):
@@ -208,3 +248,26 @@ class ReportViewSet(viewsets.ModelViewSet):
                 filled_frames.append(curr)
                 
         return Response({'frames': filled_frames})
+
+class SharedReportView(APIView):
+    def get(self, request, token):
+        shared_report = get_object_or_404(SharedReport, share_token=token)
+        
+        if not shared_report.is_active:
+            return Response({'error': 'This share link has been revoked.'}, status=403)
+            
+        if timezone.now() > shared_report.expires_at:
+            return Response({'error': 'This share link has expired.'}, status=410)
+            
+        shared_report.views += 1
+        shared_report.save(update_fields=['views'])
+        
+        # Return associated report data
+        serializer = SharedReportSerializer(shared_report)
+        return Response(serializer.data)
+
+    def delete(self, request, token):
+        shared_report = get_object_or_404(SharedReport, share_token=token)
+        shared_report.is_active = False
+        shared_report.save(update_fields=['is_active'])
+        return Response({'message': 'Share link revoked successfully.'})
