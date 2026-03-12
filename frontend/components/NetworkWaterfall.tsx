@@ -188,16 +188,7 @@ const CustomTooltip = ({ active, payload }: { active?: boolean; payload?: { payl
     return null;
 };
 
-interface TickProps {
-    x: number;
-    y: number;
-    payload: {
-        index: number;
-        value: string | number;
-    };
-}
-
-const CustomYAxisTick = (props: TickProps & { chartData: ChartData[] }) => {
+const CustomYAxisTick = (props: any) => {
     const { y, payload, chartData } = props;
     const index = payload.index;
     const data = chartData?.[index];

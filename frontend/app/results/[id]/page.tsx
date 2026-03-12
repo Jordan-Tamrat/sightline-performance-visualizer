@@ -59,6 +59,16 @@ export default function ResultPage() {
   const [shareError, setShareError] = useState('');
   const [copied, setCopied] = useState(false);
 
+  // Tab state
+  const [activeTab, setActiveTab] = useState<'overview' | 'ai' | 'network' | 'visuals'>('overview');
+
+  const tabs = [
+    { id: 'overview', label: 'Overview', icon: <Monitor className="w-4 h-4" /> },
+    { id: 'ai', label: 'AI Insights', icon: <Sparkles className="w-4 h-4" /> },
+    { id: 'network', label: 'Network', icon: <Wifi className="w-4 h-4" /> },
+    { id: 'visuals', label: 'Visuals', icon: <Clock className="w-4 h-4" /> }
+  ] as const;
+
   const apiUrl = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000';
 
   // Parse AI summary string (memoized automatically by React Compiler)
@@ -353,56 +363,65 @@ export default function ResultPage() {
           </div>
         </header>
 
-        {/* Top Section: Advanced Metrics & AI Summary */}
-        <div className="space-y-12">
+        {/* Tab Navigation */}
+        <div className="flex space-x-2 border-b border-zinc-200 dark:border-zinc-800 pb-px mb-8 overflow-x-auto scrollbar-hide">
+          {tabs.map((tab) => (
+            <button
+              key={tab.id}
+              onClick={() => setActiveTab(tab.id)}
+              className={clsx(
+                "flex items-center gap-2 px-4 py-3 text-sm font-medium border-b-2 transition-colors whitespace-nowrap cursor-pointer",
+                activeTab === tab.id
+                  ? "border-blue-500 text-blue-600 dark:text-blue-400"
+                  : "border-transparent text-zinc-500 hover:text-zinc-700 dark:hover:text-zinc-300 hover:border-zinc-300 dark:hover:border-zinc-700"
+              )}
+            >
+              {tab.icon}
+              {tab.label}
+            </button>
+          ))}
+        </div>
 
-          {/* 4-Pillar Score Grid */}
-          <motion.div
-            initial={{ opacity: 0, y: 40 }}
-            animate={{ opacity: hasRevealed ? 1 : 0, y: hasRevealed ? 0 : 40 }}
-            transition={{ duration: 0.6, delay: 0.2 }}
-          >
-            <ScoreGrid categories={report.lighthouse_json?.categories as ScoreGridProps['categories']} />
-          </motion.div>
+        {/* Tab Content Area */}
+        <div className="min-h-[500px] mb-12 relative">
+          <AnimatePresence mode="wait">
+            
+            {/* OVERVIEW TAB */}
+            {activeTab === 'overview' && (
+              <motion.div
+                key="overview"
+                initial={{ opacity: 0, y: 10 }}
+                animate={{ opacity: 1, y: 0 }}
+                exit={{ opacity: 0, y: -10 }}
+                transition={{ duration: 0.3 }}
+                className="space-y-12"
+              >
+                <div className={clsx("transition-all duration-700", hasRevealed ? "opacity-100" : "opacity-0 translate-y-8")}>
+                  <ScoreGrid categories={report.lighthouse_json?.categories as ScoreGridProps['categories']} />
+                </div>
+                <div className={clsx("transition-all duration-700 delay-100", hasRevealed ? "opacity-100" : "opacity-0 translate-y-8")}>
+                  <WebVitalsGrid audits={report.lighthouse_json?.audits as WebVitalsGridProps['audits']} />
+                </div>
+                <div className={clsx("transition-all duration-700 delay-200", hasRevealed ? "opacity-100" : "opacity-0 translate-y-8")}>
+                  <PerformanceSimulator baseScore={report.performance_score || 0} />
+                </div>
+              </motion.div>
+            )}
 
-          {/* Core Web Vitals Heatmap */}
-          <motion.div
-            initial={{ opacity: 0, y: 40 }}
-            animate={{ opacity: hasRevealed ? 1 : 0, y: hasRevealed ? 0 : 40 }}
-            transition={{ duration: 0.6, delay: 0.4 }}
-          >
-            <WebVitalsGrid audits={report.lighthouse_json?.audits as WebVitalsGridProps['audits']} />
-          </motion.div>
-
-          {/* Interactive Network Waterfall */}
-          <motion.div
-            initial={{ opacity: 0, y: 40 }}
-            animate={{ opacity: hasRevealed ? 1 : 0, y: hasRevealed ? 0 : 40 }}
-            transition={{ duration: 0.6, delay: 0.5 }}
-          >
-            <NetworkWaterfall audits={report.lighthouse_json?.audits as NetworkWaterfallProps['audits']} />
-          </motion.div>
-
-          {/* Performance Simulator */}
-          <motion.div
-            initial={{ opacity: 0, y: 40 }}
-            animate={{ opacity: hasRevealed ? 1 : 0, y: hasRevealed ? 0 : 40 }}
-            transition={{ duration: 0.6, delay: 0.6 }}
-          >
-            <PerformanceSimulator baseScore={report.performance_score || 0} />
-          </motion.div>
-
-          {/* AI Summary */}
-          <motion.div
-            initial={{ opacity: 0, y: 40 }}
-            animate={{ opacity: hasRevealed ? 1 : 0, y: hasRevealed ? 0 : 40 }}
-            transition={{ duration: 0.6, delay: 0.7 }}
-            className="w-full bg-zinc-50 dark:bg-zinc-900/50 border border-zinc-200 dark:border-zinc-800 rounded-2xl p-8 shadow-sm"
-          >
-            <h3 className="text-xl font-semibold mb-6 flex items-center gap-2">
-              <Sparkles className="w-5 h-5 text-purple-400" />
-              <span className="bg-gradient-to-r from-purple-400 to-pink-400 text-transparent bg-clip-text">Gemini AI Insights</span>
-            </h3>
+            {/* AI INSIGHTS TAB */}
+            {activeTab === 'ai' && (
+              <motion.div
+                key="ai"
+                initial={{ opacity: 0, y: 10 }}
+                animate={{ opacity: 1, y: 0 }}
+                exit={{ opacity: 0, y: -10 }}
+                transition={{ duration: 0.3 }}
+                className="w-full bg-zinc-50 dark:bg-zinc-900/50 border border-zinc-200 dark:border-zinc-800 rounded-2xl p-8 shadow-sm"
+              >
+                <h3 className="text-xl font-semibold mb-6 flex items-center gap-2">
+                  <Sparkles className="w-5 h-5 text-purple-400" />
+                  <span className="bg-gradient-to-r from-purple-400 to-pink-400 text-transparent bg-clip-text">Gemini AI Insights</span>
+                </h3>
 
             {aiSummary ? (
               <div className="space-y-6">
@@ -476,15 +495,34 @@ export default function ResultPage() {
                 )}
               </div>
             )}
-          </motion.div>
+              </motion.div>
+            )}
 
-          {/* Visual Timeline (Filmstrip) */}
-          <motion.div
-            initial={{ opacity: 0, y: 40 }}
-            animate={hasRevealed ? { opacity: 1, y: 0 } : { opacity: 0, y: 40 }}
-            transition={{ duration: 0.6, delay: 0.8 }}
-            className="space-y-4"
-          >
+            {/* NETWORK TAB */}
+            {activeTab === 'network' && (
+              <motion.div
+                key="network"
+                initial={{ opacity: 0, y: 10 }}
+                animate={{ opacity: 1, y: 0 }}
+                exit={{ opacity: 0, y: -10 }}
+                transition={{ duration: 0.3 }}
+              >
+                <NetworkWaterfall audits={report.lighthouse_json?.audits as NetworkWaterfallProps['audits']} />
+              </motion.div>
+            )}
+
+            {/* VISUALS TAB */}
+            {activeTab === 'visuals' && (
+              <motion.div
+                key="visuals"
+                initial={{ opacity: 0, y: 10 }}
+                animate={{ opacity: 1, y: 0 }}
+                exit={{ opacity: 0, y: -10 }}
+                transition={{ duration: 0.3 }}
+                className="space-y-12"
+              >
+                {/* Visual Timeline (Filmstrip) */}
+                <div className="space-y-4">
             <div className="flex items-end justify-between mb-4">
               <div>
                 <h3 className="text-xl font-semibold mb-1">Visual Loading Timeline</h3>
@@ -523,16 +561,11 @@ export default function ResultPage() {
                 <p className="text-xs text-zinc-600 mt-1">Try running a new audit to generate a timeline.</p>
               </div>
             )}
-          </motion.div>
+                </div>
 
-          {/* Screenshot */}
-          {report.screenshot && (
-            <motion.div
-              initial={{ opacity: 0, y: 40 }}
-              animate={hasRevealed ? { opacity: 1, y: 0 } : { opacity: 0, y: 40 }}
-              transition={{ duration: 0.6, delay: 1 }}
-              className="space-y-4"
-            >
+                {/* Screenshot */}
+                {report.screenshot && (
+                  <div className="space-y-4">
               <h3 className="text-xl font-semibold">Final Screenshot</h3>
               <div className={clsx(
                 "bg-zinc-900 border border-zinc-800 rounded-2xl overflow-y-auto w-full flex justify-center p-1 scrollbar-thin scrollbar-thumb-zinc-700 scrollbar-track-transparent",
@@ -554,8 +587,12 @@ export default function ResultPage() {
                   priority
                 />
               </div>
-            </motion.div>
-          )}
+                  </div>
+                )}
+              </motion.div>
+            )}
+            
+          </AnimatePresence>
         </div>
       </div>
       

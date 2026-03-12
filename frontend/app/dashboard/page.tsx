@@ -68,7 +68,7 @@ export default function DashboardPage() {
                 </div>
                 <h3 className="text-2xl font-semibold mb-3">Welcome to your Dashboard</h3>
                 <p className="text-zinc-500 dark:text-zinc-400 mb-10">
-                    You haven't run any audits yet! Your latest full report will automatically appear here once you run one.
+                    You haven&apos;t run any audits yet! Your latest full report will automatically appear here once you run one.
                 </p>
                 <Link
                     href="/"

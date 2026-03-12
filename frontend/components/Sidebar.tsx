@@ -2,7 +2,7 @@
 
 import Link from 'next/link';
 import { usePathname } from 'next/navigation';
-import { LayoutDashboard, History, Plus } from 'lucide-react';
+import { LayoutDashboard, History } from 'lucide-react';
 import clsx from 'clsx';
 import ThemeToggle from './ThemeToggle';
 

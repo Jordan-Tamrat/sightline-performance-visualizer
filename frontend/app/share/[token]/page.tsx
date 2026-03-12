@@ -23,6 +23,16 @@ export default function SharedReportPage() {
   const [filmstrip, setFilmstrip] = useState<any[]>([]);
   const [loadingFilmstrip, setLoadingFilmstrip] = useState(false);
   
+  // Tab state
+  const [activeTab, setActiveTab] = useState<'overview' | 'ai' | 'network' | 'visuals'>('overview');
+
+  const tabs = [
+    { id: 'overview', label: 'Overview', icon: <Monitor className="w-4 h-4" /> },
+    { id: 'ai', label: 'AI Insights', icon: <Sparkles className="w-4 h-4" /> },
+    { id: 'network', label: 'Network', icon: <Wifi className="w-4 h-4" /> },
+    { id: 'visuals', label: 'Visuals', icon: <Clock className="w-4 h-4" /> }
+  ] as const;
+  
   const apiUrl = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000';
 
   useEffect(() => {
@@ -157,20 +167,65 @@ export default function SharedReportPage() {
           </div>
         </header>
 
-        {/* Top Section: Advanced Metrics & AI Summary */}
-        <div className="space-y-12">
-          
-          <ScoreGrid categories={report.lighthouse_json?.categories} />
-          <WebVitalsGrid audits={report.lighthouse_json?.audits} />
-          <NetworkWaterfall audits={report.lighthouse_json?.audits} />
-          <PerformanceSimulator baseScore={report.performance_score || 0} />
+        {/* Tab Navigation */}
+        <div className="flex space-x-2 border-b border-zinc-200 dark:border-zinc-800 pb-px mb-8 overflow-x-auto scrollbar-hide">
+          {tabs.map((tab) => (
+            <button
+              key={tab.id}
+              onClick={() => setActiveTab(tab.id)}
+              className={clsx(
+                "flex items-center gap-2 px-4 py-3 text-sm font-medium border-b-2 transition-colors whitespace-nowrap cursor-pointer",
+                activeTab === tab.id
+                  ? "border-blue-500 text-blue-600 dark:text-blue-400"
+                  : "border-transparent text-zinc-500 hover:text-zinc-700 dark:hover:text-zinc-300 hover:border-zinc-300 dark:hover:border-zinc-700"
+              )}
+            >
+              {tab.icon}
+              {tab.label}
+            </button>
+          ))}
+        </div>
 
-          {/* AI Summary */}
-          <div className="w-full bg-zinc-50 dark:bg-zinc-900/50 border border-zinc-200 dark:border-zinc-800 rounded-2xl p-8 shadow-sm">
-            <h3 className="text-xl font-semibold mb-6 flex items-center gap-2">
-              <Sparkles className="w-5 h-5 text-purple-400" />
-              <span className="bg-gradient-to-r from-purple-400 to-pink-400 text-transparent bg-clip-text">Gemini AI Insights</span>
-            </h3>
+        {/* Tab Content Area */}
+        <div className="min-h-[500px] mb-12 relative">
+          <AnimatePresence mode="wait">
+            
+            {/* OVERVIEW TAB */}
+            {activeTab === 'overview' && (
+              <motion.div
+                key="overview"
+                initial={{ opacity: 0, y: 10 }}
+                animate={{ opacity: 1, y: 0 }}
+                exit={{ opacity: 0, y: -10 }}
+                transition={{ duration: 0.3 }}
+                className="space-y-12"
+              >
+                <div>
+                  <ScoreGrid categories={report.lighthouse_json?.categories} />
+                </div>
+                <div>
+                  <WebVitalsGrid audits={report.lighthouse_json?.audits} />
+                </div>
+                <div>
+                  <PerformanceSimulator baseScore={report.performance_score || 0} />
+                </div>
+              </motion.div>
+            )}
+
+            {/* AI INSIGHTS TAB */}
+            {activeTab === 'ai' && (
+              <motion.div
+                key="ai"
+                initial={{ opacity: 0, y: 10 }}
+                animate={{ opacity: 1, y: 0 }}
+                exit={{ opacity: 0, y: -10 }}
+                transition={{ duration: 0.3 }}
+                className="w-full bg-zinc-50 dark:bg-zinc-900/50 border border-zinc-200 dark:border-zinc-800 rounded-2xl p-8 shadow-sm"
+              >
+                <h3 className="text-xl font-semibold mb-6 flex items-center gap-2">
+                  <Sparkles className="w-5 h-5 text-purple-400" />
+                  <span className="bg-gradient-to-r from-purple-400 to-pink-400 text-transparent bg-clip-text">Gemini AI Insights</span>
+                </h3>
 
             {aiSummary ? (
               <div className="space-y-6">
@@ -221,10 +276,34 @@ export default function SharedReportPage() {
                 )}
               </div>
             )}
-          </div>
+              </motion.div>
+            )}
 
-          {/* Visual Timeline (Filmstrip) */}
-          <div className="space-y-4">
+            {/* NETWORK TAB */}
+            {activeTab === 'network' && (
+              <motion.div
+                key="network"
+                initial={{ opacity: 0, y: 10 }}
+                animate={{ opacity: 1, y: 0 }}
+                exit={{ opacity: 0, y: -10 }}
+                transition={{ duration: 0.3 }}
+              >
+                <NetworkWaterfall audits={report.lighthouse_json?.audits} />
+              </motion.div>
+            )}
+
+            {/* VISUALS TAB */}
+            {activeTab === 'visuals' && (
+              <motion.div
+                key="visuals"
+                initial={{ opacity: 0, y: 10 }}
+                animate={{ opacity: 1, y: 0 }}
+                exit={{ opacity: 0, y: -10 }}
+                transition={{ duration: 0.3 }}
+                className="space-y-12"
+              >
+                {/* Visual Timeline (Filmstrip) */}
+                <div className="space-y-4">
             <div className="flex items-end justify-between mb-4">
               <div>
                 <h3 className="text-xl font-semibold mb-1">Visual Loading Timeline</h3>
@@ -288,8 +367,12 @@ export default function SharedReportPage() {
                   priority
                 />
               </div>
-            </div>
-          )}
+                  </div>
+                )}
+              </motion.div>
+            )}
+            
+          </AnimatePresence>
         </div>
       </div>
     </div>
