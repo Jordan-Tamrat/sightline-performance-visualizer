@@ -9,11 +9,12 @@ export default function ThemeToggle({ showLabel = false }: { showLabel?: boolean
     const [theme, setTheme] = useState<'light' | 'dark'>('dark');
 
     useEffect(() => {
-        setMounted(true);
         const saved = localStorage.getItem('theme');
         if (saved === 'light' || saved === 'dark') {
+            // eslint-disable-next-line react-hooks/set-state-in-effect
             setTheme(saved);
         }
+        setMounted(true);
     }, []);
 
     useEffect(() => {
