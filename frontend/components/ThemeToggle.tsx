@@ -59,7 +59,7 @@ export default function ThemeToggle({ showLabel = false }: { showLabel?: boolean
             <motion.button
                 whileTap={{ scale: 0.9 }}
                 onClick={toggleTheme}
-                className="p-2 w-9 h-9 flex items-center justify-center rounded-full bg-zinc-200 dark:bg-zinc-800 text-zinc-800 dark:text-zinc-200 hover:bg-zinc-300 dark:hover:bg-zinc-700 transition-colors focus:outline-none focus:ring-2 focus:ring-blue-500"
+                className="p-2 w-9 h-9 flex items-center justify-center rounded-full bg-zinc-200 dark:bg-zinc-800 text-zinc-800 dark:text-zinc-200 hover:bg-zinc-300 dark:hover:bg-zinc-700 transition-colors focus:outline-none focus:ring-2 focus:ring-blue-500 cursor-pointer"
                 aria-label={`Switch to ${theme === 'dark' ? 'light' : 'dark'} mode`}
             >
                 {theme === 'dark' ? (

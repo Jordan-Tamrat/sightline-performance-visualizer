@@ -12,6 +12,8 @@ import ScoreGrid from '@/components/ScoreGrid';
 import WebVitalsGrid from '@/components/WebVitalsGrid';
 import NetworkWaterfall from '@/components/NetworkWaterfall';
 import PerformanceSimulator from '@/components/PerformanceSimulator';
+import AIInsightsPanel from '@/components/AIInsightsPanel';
+import { InsightAction } from '@/components/InsightCard';
 
 export default function SharedReportPage() {
   const params = useParams();
@@ -74,20 +76,25 @@ export default function SharedReportPage() {
     }
   }, [report, apiUrl]);
 
-  const aiSummary = (() => {
-    if (!report?.ai_summary) return null;
-    try {
-      let cleanJson = report.ai_summary.trim();
-      const firstBrace = cleanJson.indexOf('{');
-      const lastBrace = cleanJson.lastIndexOf('}');
-      if (firstBrace !== -1 && lastBrace !== -1) {
-        cleanJson = cleanJson.slice(firstBrace, lastBrace + 1);
-      }
-      return JSON.parse(cleanJson);
-    } catch (e) {
-      return null;
+  const handleInsightAction = (action: InsightAction) => {
+    if (action.type === 'waterfall') {
+      setActiveTab('network');
+      setTimeout(() => {
+        document.getElementById('network-waterfall')?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+      }, 300);
+    } else if (action.type === 'filmstrip') {
+      setActiveTab('visuals');
+      setTimeout(() => {
+        document.getElementById('visual-timeline')?.scrollIntoView({ behavior: 'smooth', block: 'center' });
+      }, 300);
+    } else if (action.type === 'metric') {
+      setActiveTab('overview');
+      setTimeout(() => {
+        const el = document.getElementById('score-grid') || document.getElementById('web-vitals-grid');
+        el?.scrollIntoView({ behavior: 'smooth', block: 'center' });
+      }, 300);
     }
-  })();
+  };
 
   if (loading) {
     return (
@@ -200,10 +207,10 @@ export default function SharedReportPage() {
                 transition={{ duration: 0.3 }}
                 className="space-y-12"
               >
-                <div>
+                <div id="score-grid">
                   <ScoreGrid categories={report.lighthouse_json?.categories} />
                 </div>
-                <div>
+                <div id="web-vitals-grid">
                   <WebVitalsGrid audits={report.lighthouse_json?.audits} />
                 </div>
                 <div>
@@ -220,62 +227,11 @@ export default function SharedReportPage() {
                 animate={{ opacity: 1, y: 0 }}
                 exit={{ opacity: 0, y: -10 }}
                 transition={{ duration: 0.3 }}
-                className="w-full bg-zinc-50 dark:bg-zinc-900/50 border border-zinc-200 dark:border-zinc-800 rounded-2xl p-8 shadow-sm"
               >
-                <h3 className="text-xl font-semibold mb-6 flex items-center gap-2">
-                  <Sparkles className="w-5 h-5 text-purple-400" />
-                  <span className="bg-gradient-to-r from-purple-400 to-pink-400 text-transparent bg-clip-text">Gemini AI Insights</span>
-                </h3>
-
-            {aiSummary ? (
-              <div className="space-y-6">
-                <div className="bg-zinc-100/80 dark:bg-zinc-900/80 border border-zinc-200 dark:border-zinc-800 rounded-xl p-6 shadow-sm">
-                  <h4 className="text-zinc-500 dark:text-zinc-400 text-sm font-medium uppercase tracking-wider mb-2">Overall Assessment</h4>
-                  <p className="text-lg text-zinc-900 dark:text-zinc-100 leading-relaxed">{aiSummary.overall_assessment}</p>
-                </div>
-                <div className="grid gap-4">
-                  {aiSummary.issues.map((issue: any, idx: number) => (
-                    <div
-                      key={idx}
-                      className="bg-white dark:bg-zinc-900/40 border border-zinc-200 dark:border-zinc-800/50 rounded-xl p-5 hover:border-zinc-300 dark:hover:border-zinc-700 transition-colors shadow-sm"
-                    >
-                       <div className="flex flex-col md:flex-row md:items-start justify-between gap-4">
-                        <div className="flex-1">
-                          <div className="flex items-center gap-3 mb-1">
-                            <h5 className="font-semibold text-zinc-900 dark:text-zinc-200 text-lg">{issue.title}</h5>
-                            <span className={clsx(
-                              "px-2.5 py-0.5 rounded-full text-[10px] font-bold uppercase tracking-wider md:hidden",
-                              issue.severity === 'High' && "bg-red-100 text-red-700 dark:bg-red-500/10 dark:text-red-500 border border-red-500/20",
-                              issue.severity === 'Medium' && "bg-amber-100 text-amber-700 dark:bg-amber-500/10 dark:text-amber-500 border border-amber-500/20",
-                              issue.severity === 'Low' && "bg-blue-100 text-blue-700 dark:bg-blue-500/10 dark:text-blue-500 border border-blue-500/20",
-                            )}>
-                              {issue.severity}
-                            </span>
-                          </div>
-                          <p className="text-zinc-600 dark:text-zinc-400 text-sm mb-3 leading-relaxed">{issue.explanation}</p>
-                        </div>
-                        <span className={clsx(
-                          "hidden md:inline-block px-3 py-1 rounded-full text-xs font-bold uppercase tracking-wide h-fit whitespace-nowrap",
-                          issue.severity === 'High' && "bg-red-100 text-red-700 dark:bg-red-500/10 dark:text-red-500 border border-red-500/20",
-                          issue.severity === 'Medium' && "bg-amber-100 text-amber-700 dark:bg-amber-500/10 dark:text-amber-500 border border-amber-500/20",
-                          issue.severity === 'Low' && "bg-blue-100 text-blue-700 dark:bg-blue-500/10 dark:text-blue-500 border border-blue-500/20",
-                        )}>
-                          {issue.severity}
-                        </span>
-                      </div>
-                    </div>
-                  ))}
-                </div>
-              </div>
-            ) : (
-              <div className="prose prose-zinc dark:prose-invert max-w-none text-zinc-700 dark:text-zinc-300">
-                {report.ai_summary ? (
-                  <div className="whitespace-pre-wrap leading-relaxed">{report.ai_summary}</div>
-                ) : (
-                  <p className="italic text-zinc-500">AI summary not available.</p>
-                )}
-              </div>
-            )}
+                <AIInsightsPanel 
+                  aiSummary={report.ai_summary} 
+                  onAction={handleInsightAction} 
+                />
               </motion.div>
             )}
 
@@ -287,6 +243,7 @@ export default function SharedReportPage() {
                 animate={{ opacity: 1, y: 0 }}
                 exit={{ opacity: 0, y: -10 }}
                 transition={{ duration: 0.3 }}
+                id="network-waterfall"
               >
                 <NetworkWaterfall audits={report.lighthouse_json?.audits} />
               </motion.div>
@@ -303,7 +260,7 @@ export default function SharedReportPage() {
                 className="space-y-12"
               >
                 {/* Visual Timeline (Filmstrip) */}
-                <div className="space-y-4">
+                <div id="visual-timeline" className="space-y-4">
             <div className="flex items-end justify-between mb-4">
               <div>
                 <h3 className="text-xl font-semibold mb-1">Visual Loading Timeline</h3>

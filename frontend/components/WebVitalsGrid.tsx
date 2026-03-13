@@ -37,7 +37,7 @@ const getSeverity = (id: string, value: number, isTBTFallback?: boolean): Severi
     if (isTBTFallback) {
         // TBT Lab thresholds: Good <= 200ms, NI <= 600ms
         if (value <= 200) return 'good';
-        if (value <= 500) return 'needs-improvement';
+        if (value <= 600) return 'needs-improvement';
         return 'poor';
     }
 

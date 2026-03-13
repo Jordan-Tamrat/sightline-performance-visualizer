@@ -187,55 +187,86 @@ def generate_ai_summary(lighthouse_data, url):
         genai.configure(api_key=gemini_api_key)
         model = genai.GenerativeModel('gemini-2.5-flash')
         
-        # Prepare findings
-        audit_findings = []
+        # Prepare Context - Providing specific Core Metrics for data-driven analysis
         audits = lighthouse_data.get('audits', {})
+        core_metrics_keys = [
+            'largest-contentful-paint', 
+            'total-blocking-time', 
+            'cumulative-layout-shift', 
+            'first-contentful-paint', 
+            'speed-index',
+            'interactive'
+        ]
         
+        core_metrics = []
+        for key in core_metrics_keys:
+            audit = audits.get(key)
+            if audit:
+                core_metrics.append({
+                    'id': key,
+                    'title': audit.get('title'),
+                    'score': audit.get('score'),
+                    'value': audit.get('displayValue', audit.get('numericValue')),
+                    'numeric': audit.get('numericValue'),
+                    'description': audit.get('description', '')
+                })
+
+        # Process failed audits (excluding ones already in core_metrics to save tokens)
+        other_failed_findings = []
         for key, audit in audits.items():
+            if key in core_metrics_keys:
+                continue
             score = audit.get('score')
             if score is not None and score < 0.9:
-                title = audit.get('title')
                 display_value = audit.get('displayValue', '')
-                audit_findings.append({
-                    'score': score,
-                    'text': f"- {title} (Value: {display_value})"
-                })
-        
-        audit_findings.sort(key=lambda x: x['score'])
-        top_findings = [item['text'] for item in audit_findings[:15]]
-        
-        findings_text = "\n".join(top_findings)
-        if not top_findings:
-            findings_text = "No major performance issues found. All audits passed with a score >= 0.9."
+                description = audit.get('description', '')
+                other_failed_findings.append(f"- {audit.get('title')} (ID: {key}, Value: {display_value}): {description}")
+
+        core_metrics_json = json.dumps(core_metrics, indent=2)
+        failed_findings_text = "\n".join(other_failed_findings[:10])
 
         prompt = (
-            f"You are a web performance analyst.\n\n"
-            f"Context:\n"
-            f"The following Lighthouse audit findings are extracted directly from a performance report for {url}.\n"
-            f"The issues are already filtered and sorted from worst to least severe.\n\n"
-            f"Audit Findings:\n"
-            f"{findings_text}\n\n"
-            f"STRICT RULES:\n"
-            f"1. ONLY use the issues listed above. Do NOT invent or assume any additional problems.\n"
-            f"2. If no major issues are listed, clearly state that performance is strong and no critical bottlenecks were detected.\n"
-            f"3. Prioritize the most severe issues first.\n"
-            f"4. Keep the tone professional and factual.\n"
-            f"5. Do NOT exaggerate business impact.\n"
-            f"6. CRITICAL: You must output strictly valid JSON. Ensure any internal double-quotes inside strings are properly escaped as \\\".\n\n"
+            f"You are a strict technical Web Performance Analyst.\n\n"
+            f"DATA FOR ANALYSIS:\n"
+            f"URL: {url}\n"
+            f"Core Metrics (WebVitals):\n{core_metrics_json}\n"
+            f"Additional Performance Issues:\n{failed_findings_text if other_failed_findings else 'None'}\n\n"
+            f"THRESHOLD RULES (STRICT):\n"
+            f"- LCP: Good < 2.5s, Needs Improv < 4s, Poor > 4s\n"
+            f"- FCP: Good < 1.8s, Needs Improv < 3s, Poor > 3s\n"
+            f"- SI (Speed Index): Good < 3.4s, Needs Improv < 5.8s, Poor > 5.8s\n"
+            f"- TTI: Good < 3.8s, Needs Improv < 7.3s, Poor > 7.3s\n"
+            f"- TBT: Good < 200ms, Needs Improv < 600ms, Poor > 600ms\n"
+            f"- CLS: Good < 0.1, Needs Improv < 0.25, Poor > 0.25\n\n"
+            f"INSTRUCTIONS:\n"
+            f"1. ANALYZE the 'numeric' values of Core Metrics against the thresholds above. \n"
+            f"2. TONE & PERFECTIONISM: For metrics in the 'Good' range (Low severity), your tone MUST be confirmatory and positive. \n"
+            f"   - DO NOT say it 'needs improvement', is 'far from optimal', or has 'room for improvement'. \n"
+            f"   - DO NOT suggest fixes unless there is a glaring, trivial optimization.\n"
+            f"   - INSTEAD, state that the metric is well-optimized and explain why this value provides a great user experience.\n"
+            f"3. SEVERITY: If a metric is 'Poor', it MUST be 'High' severity. If 'Needs Improvement', mark as 'Medium'. Good = 'Low'.\n"
+            f"4. IMPACT: \n"
+            f"   - For 'Poor'/'Medium': Describe how this value hurts the user.\n"
+            f"   - For 'Good': Explain the positive benefit this value brings to the user (e.g., 'Instant visual feedback', 'Smooth interactions').\n"
+            f"5. SUGGESTION: Only provide technical fixes for 'High' and 'Medium' issues. For 'Low' issues, simply suggest 'Monitor and maintain this performance' or leave blank.\n"
+            f"6. REFERENCES: Always extract and include at least one high-quality documentation link from the 'description' fields provided in the data.\n\n"
             f"OUTPUT FORMAT (JSON ONLY):\n"
             f"{{\n"
-            f'  "overall_assessment": "Short 1-2 sentence summary of the overall performance.",\n'
+            f'  "overall_assessment": "Data-driven summary based on the scores provided.",\n'
             f'  "issues": [\n'
             f'    {{\n'
-            f'      "title": "Issue Name (e.g. Reduce Unused JavaScript)",\n'
-            f'      "explanation": "Brief explanation of what is happening.",\n'
-            f'      "impact": "Specific business impact (e.g. Slows down initial page load).",\n'
-            f'      "suggestion": "Specific technical recommendation on how to fix this issue.",\n'
-            f'      "severity": "High" | "Medium" | "Low"\n'
+            f'      "title": "Exact Metric/Issue Name",\n'
+            f'      "explanation": "Technical reason for this specific number.",\n'
+            f'      "impact": "User experience cost (specific to the delta from target).",\n'
+            f'      "suggestion": "How to fix it.",\n'
+            f'      "severity": "High" | "Medium" | "Low",\n'
+            f'      "code_fix": "Optional: Specific code fix.",\n'
+            f'      "references": ["Optional: URL to documentation"],\n'
+            f'      "action": {{ "type": "waterfall" | "metric" | "filmstrip", "target": "Audit ID" }}\n'
             f'    }}\n'
             f'  ]\n'
-            f"}}\n\n"
-            f"Provide RAW JSON only. Do not wrap in markdown code blocks."
+            f"}}\n"
+            f"Provide RAW JSON only."
         )
         
         response = model.generate_content(prompt)
