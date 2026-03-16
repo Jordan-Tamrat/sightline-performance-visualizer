@@ -6,7 +6,12 @@ import { LayoutDashboard, History } from 'lucide-react';
 import clsx from 'clsx';
 import ThemeToggle from './ThemeToggle';
 
-export default function Sidebar() {
+interface SidebarProps {
+    isOpen?: boolean;
+    onClose?: () => void;
+}
+
+export default function Sidebar({ isOpen, onClose }: SidebarProps) {
     const pathname = usePathname();
 
     const links = [
@@ -15,11 +20,34 @@ export default function Sidebar() {
     ];
 
     return (
-        <aside className="w-64 fixed inset-y-0 left-0 bg-white dark:bg-zinc-900 border-r border-zinc-200 dark:border-zinc-800 hidden md:flex flex-col z-50">
-            <div className="p-6">
-                <h1 className="text-2xl font-bold tracking-tight bg-gradient-to-r from-blue-400 to-emerald-400 text-transparent bg-clip-text mb-8">
-                    Sightline
-                </h1>
+        <>
+            {/* Mobile Overlay */}
+            <div 
+                className={clsx(
+                    "fixed inset-0 bg-black/50 backdrop-blur-sm z-40 transition-opacity md:hidden",
+                    isOpen ? "opacity-100" : "opacity-0 pointer-events-none"
+                )}
+                onClick={onClose}
+            />
+
+            <aside className={clsx(
+                "fixed inset-y-0 left-0 bg-white dark:bg-zinc-900 border-r border-zinc-200 dark:border-zinc-800 transition-transform duration-300 ease-in-out z-50 flex flex-col w-64 md:translate-x-0 shadow-2xl md:shadow-none",
+                isOpen ? "translate-x-0" : "-translate-x-full"
+            )}>
+                <div className="p-6">
+                    <div className="flex items-center justify-between mb-8">
+                        <Link href="/" className="group flex items-center gap-2">
+                            <h1 className="text-2xl font-bold tracking-tight bg-gradient-to-r from-blue-400 to-emerald-400 text-transparent bg-clip-text cursor-pointer hover:opacity-80 transition-opacity">
+                                Sightline
+                            </h1>
+                        </Link>
+                        <button 
+                            onClick={onClose}
+                            className="p-2 md:hidden hover:bg-zinc-100 dark:hover:bg-zinc-800 rounded-lg text-zinc-500 transition-colors"
+                        >
+                            ✕
+                        </button>
+                    </div>
                 <nav className="space-y-2">
                     {links.map((link) => (
                         <Link
@@ -42,5 +70,6 @@ export default function Sidebar() {
                 <ThemeToggle showLabel={true} />
             </div>
         </aside>
+        </>
     );
 }

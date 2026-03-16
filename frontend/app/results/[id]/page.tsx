@@ -10,23 +10,15 @@ import clsx from 'clsx';
 import Gauge from '../../../components/Gauge';
 import ScoreGrid, { ScoreGridProps } from '@/components/ScoreGrid';
 import WebVitalsGrid, { WebVitalsGridProps } from '@/components/WebVitalsGrid';
-import NetworkWaterfall from '@/components/NetworkWaterfall';
+import NetworkWaterfall, { NetworkWaterfallProps } from '@/components/NetworkWaterfall';
 import PerformanceSimulator from '@/components/PerformanceSimulator';
 import AIInsightsPanel from '@/components/AIInsightsPanel';
 import { InsightAction } from '@/components/InsightCard';
 
-interface Issue {
-  title: string;
-  explanation: string;
-  impact: string;
-  suggestion: string;
-  severity: 'High' | 'Medium' | 'Low';
-}
+// Interface Issue removed as it is now unused.
 
-interface AISummary {
-  overall_assessment: string;
-  issues: Issue[];
-}
+// Interface Issue removed if unused, but it's used in AISummary which is removed.
+// Removed unused AISummary interface.
 
 interface Report {
   id: number;
@@ -48,7 +40,7 @@ export default function ResultPage() {
   const params = useParams();
   const id = params?.id as string;
   const [report, setReport] = useState<Report | null>(null);
-  const [loading, setLoading] = useState(true);
+  // Removed unused loading state
   const [error, setError] = useState('');
   const [showReveal, setShowReveal] = useState(false);
   const [hasRevealed, setHasRevealed] = useState(false);
@@ -103,14 +95,17 @@ export default function ResultPage() {
         setReport(data);
 
         if (data.status === 'completed' || data.status === 'failed') {
-          setLoading(false);
           return true; // Signal completion
         }
-      } catch (err: any) {
+      } catch (err: unknown) {
         console.error(err);
-        const errorMessage = err.response?.data?.detail || err.message || 'Failed to fetch report';
+        let errorMessage = 'Failed to fetch report';
+        if (axios.isAxiosError(err)) {
+          errorMessage = err.response?.data?.detail || err.message || errorMessage;
+        } else if (err instanceof Error) {
+          errorMessage = err.message;
+        }
         setError(errorMessage);
-        setLoading(false);
         return true; // Signal error/completion
       }
       return false;
@@ -176,8 +171,12 @@ export default function ResultPage() {
         url: response.data.share_url,
         expiresAt: response.data.expires_at
       });
-    } catch (err: any) {
-      setShareError(err.response?.data?.error || 'Failed to generate share link');
+    } catch (err: unknown) {
+      if (axios.isAxiosError(err)) {
+        setShareError(err.response?.data?.error || 'Failed to generate share link');
+      } else {
+        setShareError('Failed to generate share link');
+      }
     } finally {
       setIsSharing(false);
     }
@@ -436,7 +435,7 @@ export default function ResultPage() {
                 transition={{ duration: 0.3 }}
                 id="network-waterfall"
               >
-                <NetworkWaterfall audits={report.lighthouse_json?.audits as any} />
+                <NetworkWaterfall audits={report.lighthouse_json?.audits as NetworkWaterfallProps['audits']} />
               </motion.div>
             )}
 

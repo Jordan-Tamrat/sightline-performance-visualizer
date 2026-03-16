@@ -27,6 +27,16 @@ export default function AIInsightsPanel({ aiSummary, onAction }: AIInsightsPanel
     }
   }, [aiSummary]);
 
+  const sortedIssues = useMemo(() => {
+    const issues = parsedData?.issues || [];
+    const severityOrder: Record<string, number> = { 'High': 0, 'Medium': 1, 'Low': 2 };
+    return [...issues].sort((a: Insight, b: Insight) => {
+      const aOrder = severityOrder[a.severity] ?? 3;
+      const bOrder = severityOrder[b.severity] ?? 3;
+      return aOrder - bOrder;
+    });
+  }, [parsedData]);
+
   if (!parsedData) {
     return (
       <div className="flex flex-col items-center justify-center py-20 text-zinc-500 bg-zinc-50 dark:bg-zinc-900/30 border border-zinc-200 dark:border-zinc-800 rounded-3xl border-dashed">
@@ -36,16 +46,7 @@ export default function AIInsightsPanel({ aiSummary, onAction }: AIInsightsPanel
     );
   }
 
-  const { overall_assessment, issues = [] } = parsedData;
-
-  const sortedIssues = useMemo(() => {
-    const severityOrder: Record<string, number> = { 'High': 0, 'Medium': 1, 'Low': 2 };
-    return [...issues].sort((a, b) => {
-      const aOrder = severityOrder[a.severity] ?? 3;
-      const bOrder = severityOrder[b.severity] ?? 3;
-      return aOrder - bOrder;
-    });
-  }, [issues]);
+  const { overall_assessment } = parsedData;
   const containerVariants = {
     hidden: { opacity: 0 },
     show: {
@@ -85,7 +86,7 @@ export default function AIInsightsPanel({ aiSummary, onAction }: AIInsightsPanel
         <div className="flex items-center justify-between px-2">
           <div className="flex items-center gap-3">
              <LayoutPanelTop className="w-5 h-5 text-zinc-400" />
-             <h4 className="text-xs font-black text-zinc-400 uppercase tracking-widest">Key Insights ({issues.length})</h4>
+             <h4 className="text-xs font-black text-zinc-400 uppercase tracking-widest">Key Insights ({sortedIssues.length})</h4>
           </div>
           <p className="text-[10px] text-zinc-400 font-medium">Click to expand details</p>
         </div>

@@ -9,8 +9,27 @@ interface GaugeProps {
   baseScore?: number;
 }
 
-export default function Gauge({ score, label, size = 120, baseScore }: GaugeProps) {
-  const radius = size / 2 - 10;
+export default function Gauge({ score, label, size, baseScore }: GaugeProps) {
+  // Responsive size logic
+  const [responsiveSize, setResponsiveSize] = useState(size || 120);
+
+  useEffect(() => {
+    if (size) return; // If explicit size provided, use it
+
+    const handleResize = () => {
+      if (window.innerWidth < 768) {
+        setResponsiveSize(100);
+      } else {
+        setResponsiveSize(120);
+      }
+    };
+
+    handleResize();
+    window.addEventListener('resize', handleResize);
+    return () => window.removeEventListener('resize', handleResize);
+  }, [size]);
+
+  const radius = responsiveSize / 2 - 10;
   const circumference = 2 * Math.PI * radius;
 
   // Motion values
@@ -45,12 +64,12 @@ export default function Gauge({ score, label, size = 120, baseScore }: GaugeProp
 
   return (
     <div className="flex flex-col items-center">
-      <div className="relative" style={{ width: size, height: size }}>
+      <div className="relative" style={{ width: responsiveSize, height: responsiveSize }}>
         {/* Background Circle */}
         <svg className="w-full h-full transform -rotate-90">
           <circle
-            cx={size / 2}
-            cy={size / 2}
+            cx={responsiveSize / 2}
+            cy={responsiveSize / 2}
             r={radius}
             stroke="currentColor"
             strokeWidth="8"
@@ -64,8 +83,8 @@ export default function Gauge({ score, label, size = 120, baseScore }: GaugeProp
               initial={{ strokeDashoffset: circumference }}
               animate={{ strokeDashoffset: offset }}
               transition={{ duration: 1.5, ease: "easeOut", delay: 0.1 }}
-              cx={size / 2}
-              cy={size / 2}
+              cx={responsiveSize / 2}
+              cy={responsiveSize / 2}
               r={radius}
               stroke="currentColor"
               strokeWidth="8"
@@ -79,8 +98,8 @@ export default function Gauge({ score, label, size = 120, baseScore }: GaugeProp
             <>
               {/* Base Score Arc (0 to baseScore) - Subtle color for context */}
               <circle
-                cx={size / 2}
-                cy={size / 2}
+                cx={responsiveSize / 2}
+                cy={responsiveSize / 2}
                 r={radius}
                 stroke="currentColor"
                 strokeWidth="8"
@@ -96,8 +115,8 @@ export default function Gauge({ score, label, size = 120, baseScore }: GaugeProp
                   initial={{ strokeDasharray: `0 ${circumference}` }}
                   animate={{ strokeDasharray: `${gainLength} ${circumference}` }}
                   transition={{ duration: 1.5, ease: "easeOut", delay: 0.1 }}
-                  cx={size / 2}
-                  cy={size / 2}
+                  cx={responsiveSize / 2}
+                  cy={responsiveSize / 2}
                   r={radius}
                   stroke="currentColor"
                   strokeWidth="8"
@@ -109,8 +128,8 @@ export default function Gauge({ score, label, size = 120, baseScore }: GaugeProp
 
               {/* Ghost Score (Base Score) - Precise needle/marker */}
               <circle
-                cx={size / 2}
-                cy={size / 2}
+                cx={responsiveSize / 2}
+                cy={responsiveSize / 2}
                 r={radius}
                 stroke="currentColor"
                 strokeWidth="12"
@@ -125,8 +144,8 @@ export default function Gauge({ score, label, size = 120, baseScore }: GaugeProp
                 initial={{ strokeDashoffset: circumference }}
                 animate={{ strokeDashoffset: - (score / 100) * circumference + 1 }}
                 transition={{ duration: 1.5, ease: "easeOut", delay: 0.1 }}
-                cx={size / 2}
-                cy={size / 2}
+                cx={responsiveSize / 2}
+                cy={responsiveSize / 2}
                 r={radius}
                 stroke="white"
                 strokeWidth="12"
@@ -138,7 +157,7 @@ export default function Gauge({ score, label, size = 120, baseScore }: GaugeProp
           )}
         </svg>
         <div className="absolute inset-0 flex items-center justify-center">
-          <motion.span className={clsx("text-3xl font-bold transition-colors duration-200", colorClass)}>
+          <motion.span className={clsx("text-xl md:text-3xl font-bold transition-colors duration-200", colorClass)}>
             {rounded}
           </motion.span>
         </div>

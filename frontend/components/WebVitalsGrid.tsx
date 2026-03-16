@@ -1,7 +1,16 @@
-'use client';
-
 import { motion } from 'framer-motion';
-import { Activity, Layout, Zap, AlertCircle, CheckCircle, Paintbrush as PaintBrush, FastForward, MousePointer, Server } from 'lucide-react';
+import { 
+    Activity, 
+    Layout, 
+    Zap, 
+    AlertCircle, 
+    CheckCircle, 
+    Paintbrush as PaintBrush, 
+    FastForward, 
+    MousePointer, 
+    Server,
+    Image as ImageIcon
+} from 'lucide-react';
 import clsx from 'clsx';
 
 interface AuditData {
@@ -97,8 +106,8 @@ export default function WebVitalsGrid({ audits }: WebVitalsGridProps) {
             title: 'Largest Contentful Paint',
             short: 'LCP',
             data: audits['largest-contentful-paint'] as AuditData | undefined,
-            icon: ImageLayer,
-            description: 'Render time of the largest image or text block.'
+            icon: ImageIcon,
+            description: 'Time until the largest text or image is visible.'
         },
         {
             id: 'inp',
@@ -233,12 +242,3 @@ export default function WebVitalsGrid({ audits }: WebVitalsGridProps) {
         </div>
     );
 }
-
-// Image icon for LCP
-const ImageLayer = ({ className }: { className?: string }) => (
-    <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className={className}>
-        <rect width="18" height="18" x="3" y="3" rx="2" ry="2" />
-        <circle cx="9" cy="9" r="2" />
-        <path d="m21 15-3.086-3.086a2 2 0 0 0-2.828 0L6 21" />
-    </svg>
-);

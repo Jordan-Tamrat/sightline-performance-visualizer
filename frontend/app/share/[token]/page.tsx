@@ -5,35 +5,46 @@ import { useEffect, useState } from 'react';
 import { useParams } from 'next/navigation';
 import axios from 'axios';
 import { motion, AnimatePresence } from 'framer-motion';
-import { Loader2, AlertCircle, Clock, Sparkles, Monitor, Smartphone, Wifi, Signal, ArrowRight } from 'lucide-react';
+import { Loader2, AlertCircle, Clock, Sparkles, Monitor, Smartphone, ArrowRight, BarChart3, Globe, Eye } from 'lucide-react';
 import clsx from 'clsx';
 import Gauge from '@/components/Gauge';
-import ScoreGrid from '@/components/ScoreGrid';
-import WebVitalsGrid from '@/components/WebVitalsGrid';
-import NetworkWaterfall from '@/components/NetworkWaterfall';
+
+type TabType = 'overview' | 'insights' | 'network' | 'visuals';
+import ScoreGrid, { ScoreGridProps } from '@/components/ScoreGrid';
+import WebVitalsGrid, { WebVitalsGridProps } from '@/components/WebVitalsGrid';
+import NetworkWaterfall, { NetworkWaterfallProps } from '@/components/NetworkWaterfall';
 import PerformanceSimulator from '@/components/PerformanceSimulator';
 import AIInsightsPanel from '@/components/AIInsightsPanel';
 import { InsightAction } from '@/components/InsightCard';
 
-export default function SharedReportPage() {
+interface Report {
+  id: number;
+  url: string;
+  status: 'pending' | 'processing' | 'completed' | 'failed';
+  performance_score: number | null;
+  device_type: 'desktop' | 'mobile';
+  network_type: '4g' | 'fast3g' | 'slow3g';
+  lighthouse_json: {
+    categories?: Record<string, unknown>;
+    audits?: Record<string, unknown>;
+  } | null;
+  ai_summary: string | null;
+  screenshot: string | null;
+  created_at: string;
+}
+
+export default function SharePage() {
   const params = useParams();
-  const token = params?.token as string;
-  const [report, setReport] = useState<any>(null);
+  const token = params.token as string;
+  const [report, setReport] = useState<Report | null>(null);
   const [loading, setLoading] = useState(true);
   const [errorStatus, setErrorStatus] = useState<number | null>(null);
   const [errorMsg, setErrorMsg] = useState('');
-  const [filmstrip, setFilmstrip] = useState<any[]>([]);
+  const [filmstrip, setFilmstrip] = useState<{ data: string; timing: number }[]>([]);
   const [loadingFilmstrip, setLoadingFilmstrip] = useState(false);
   
   // Tab state
-  const [activeTab, setActiveTab] = useState<'overview' | 'ai' | 'network' | 'visuals'>('overview');
-
-  const tabs = [
-    { id: 'overview', label: 'Overview', icon: <Monitor className="w-4 h-4" /> },
-    { id: 'ai', label: 'AI Insights', icon: <Sparkles className="w-4 h-4" /> },
-    { id: 'network', label: 'Network', icon: <Wifi className="w-4 h-4" /> },
-    { id: 'visuals', label: 'Visuals', icon: <Clock className="w-4 h-4" /> }
-  ] as const;
+  const [activeTab, setActiveTab] = useState<TabType>('overview');
   
   const apiUrl = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000';
 
@@ -44,11 +55,16 @@ export default function SharedReportPage() {
       try {
         const response = await axios.get(`${apiUrl}/api/share/${token}/`);
         setReport(response.data.report);
-      } catch (err: any) {
+      } catch (err: unknown) {
         console.error(err);
-        const status = err.response?.status;
-        setErrorStatus(status || 500);
-        setErrorMsg(err.response?.data?.error || 'Failed to load shared report');
+        if (axios.isAxiosError(err)) {
+            const status = err.response?.status;
+            setErrorStatus(status || 500);
+            setErrorMsg(err.response?.data?.error || 'Failed to load shared report');
+        } else {
+            setErrorStatus(500);
+            setErrorMsg('Failed to load shared report');
+        }
       } finally {
         setLoading(false);
       }
@@ -76,6 +92,18 @@ export default function SharedReportPage() {
     }
   }, [report, apiUrl]);
 
+  if (loading) {
+    return (
+      <div className="min-h-screen flex items-center justify-center bg-zinc-50 dark:bg-zinc-950 text-zinc-900 dark:text-zinc-100 p-4">
+        <div className="flex flex-col items-center gap-4 text-zinc-500">
+          <Loader2 className="w-8 h-8 animate-spin text-blue-500" />
+          <p>Loading shared report...</p>
+        </div>
+      </div>
+    );
+  }
+
+  // Move handleInsightAction here
   const handleInsightAction = (action: InsightAction) => {
     if (action.type === 'waterfall') {
       setActiveTab('network');
@@ -95,17 +123,6 @@ export default function SharedReportPage() {
       }, 300);
     }
   };
-
-  if (loading) {
-    return (
-      <div className="min-h-screen flex items-center justify-center bg-zinc-50 dark:bg-zinc-950 text-zinc-900 dark:text-zinc-100 p-4">
-        <div className="flex flex-col items-center gap-4 text-zinc-500">
-          <Loader2 className="w-8 h-8 animate-spin text-blue-500" />
-          <p>Loading shared report...</p>
-        </div>
-      </div>
-    );
-  }
 
   // Handle errors explicitly based on status
   if (errorStatus) {
@@ -153,44 +170,60 @@ export default function SharedReportPage() {
 
       <div className="p-6 md:p-12 max-w-6xl mx-auto space-y-12">
         {/* Header */}
-        <header className="flex flex-col md:flex-row justify-between items-start md:items-center gap-4 border-b border-zinc-200 dark:border-zinc-800 pb-6 relative">
-          <div>
-            <h1 className="text-3xl font-bold truncate max-w-2xl">{report.url}</h1>
-            <div className="flex items-center gap-2 text-zinc-500 dark:text-zinc-400 mt-2 text-sm">
-              <Clock className="w-4 h-4" />
-              <span>{new Date(report.created_at).toLocaleString()}</span>
-              {/* Device & Network Environment Badge */}
-              <span className="flex items-center gap-1.5 bg-zinc-200/50 dark:bg-zinc-800/50 text-zinc-600 dark:text-zinc-400 px-2.5 py-0.5 rounded text-xs font-semibold border border-zinc-300/30 dark:border-zinc-700/30">
+        <header className="flex flex-col md:flex-row justify-between items-start md:items-center gap-6 border-b border-zinc-200 dark:border-zinc-800 pb-8 relative">
+          <div className="flex-1 min-w-0">
+            <h1 className="text-xl md:text-3xl font-bold text-zinc-900 dark:text-zinc-100 truncate">
+              {report.url.replace(/^https?:\/\//, '')}
+            </h1>
+            <div className="flex flex-wrap items-center gap-2 text-zinc-500 dark:text-zinc-400 mt-2 text-xs md:text-sm">
+              <div className="flex items-center gap-1">
+                <Clock className="w-3.5 h-3.5" />
+                <span>{new Date(report.created_at).toLocaleDateString()}</span>
+              </div>
+              <span className="text-zinc-300 dark:text-zinc-700">•</span>
+              <span className="flex items-center gap-1.5 bg-zinc-200/50 dark:bg-zinc-800/50 text-zinc-600 dark:text-zinc-400 px-2 py-0.5 rounded text-[10px] font-bold uppercase">
                 {report.device_type === 'mobile' ? <Smartphone className="w-3 h-3" /> : <Monitor className="w-3 h-3" />}
-                {report.device_type === 'mobile' ? 'Mobile' : 'Desktop'}
-                <span className="text-zinc-400 dark:text-zinc-600">·</span>
-                {report.network_type === '4g' ? <Wifi className="w-3 h-3" /> : <Signal className="w-3 h-3" />}
+                {report.device_type}
+                <span className="text-zinc-400 dark:text-zinc-600">/</span>
                 {report.network_type === 'slow3g' ? 'Slow 3G' : report.network_type === 'fast3g' ? 'Fast 3G' : '4G'}
               </span>
             </div>
           </div>
-          <div className="flex items-center">
-            <Gauge score={report.performance_score || 0} label="Performance" size={100} />
+          <div className="flex items-center shrink-0 w-full md:w-auto justify-end">
+            <Gauge score={report.performance_score || 0} label="Performance" />
           </div>
         </header>
 
         {/* Tab Navigation */}
-        <div className="flex space-x-2 border-b border-zinc-200 dark:border-zinc-800 pb-px mb-8 overflow-x-auto scrollbar-hide">
-          {tabs.map((tab) => (
-            <button
-              key={tab.id}
-              onClick={() => setActiveTab(tab.id)}
-              className={clsx(
-                "flex items-center gap-2 px-4 py-3 text-sm font-medium border-b-2 transition-colors whitespace-nowrap cursor-pointer",
-                activeTab === tab.id
-                  ? "border-blue-500 text-blue-600 dark:text-blue-400"
-                  : "border-transparent text-zinc-500 hover:text-zinc-700 dark:hover:text-zinc-300 hover:border-zinc-300 dark:hover:border-zinc-700"
-              )}
-            >
-              {tab.icon}
-              {tab.label}
-            </button>
-          ))}
+        <div className="overflow-x-auto no-scrollbar -mx-6 px-6 md:mx-0 md:px-0">
+          <div className="flex space-x-4 md:space-x-8 border-b border-zinc-200 dark:border-zinc-800 pb-px mb-8 w-max md:w-full">
+            {[
+              { id: 'overview', label: 'Overview', icon: BarChart3 },
+              { id: 'insights', label: 'AI Insights', icon: Sparkles },
+              { id: 'network', label: 'Network', icon: Globe },
+              { id: 'visuals', label: 'Visuals', icon: Eye },
+            ].map((tab) => (
+              <button
+                key={tab.id}
+                onClick={() => setActiveTab(tab.id as TabType)}
+                className={clsx(
+                  "flex items-center gap-2 pb-4 text-sm font-bold transition-all relative whitespace-nowrap",
+                  activeTab === tab.id
+                    ? "text-blue-600 dark:text-blue-400"
+                    : "text-zinc-500 hover:text-zinc-900 dark:hover:text-zinc-100"
+                )}
+              >
+                <tab.icon className="w-4 h-4" />
+                {tab.label}
+                {activeTab === tab.id && (
+                  <motion.div
+                    layoutId="activeTab"
+                    className="absolute bottom-0 left-0 right-0 h-0.5 bg-blue-600 dark:bg-blue-400"
+                  />
+                )}
+              </button>
+            ))}
+          </div>
         </div>
 
         {/* Tab Content Area */}
@@ -208,10 +241,10 @@ export default function SharedReportPage() {
                 className="space-y-12"
               >
                 <div id="score-grid">
-                  <ScoreGrid categories={report.lighthouse_json?.categories} />
+                  <ScoreGrid categories={report.lighthouse_json?.categories as ScoreGridProps['categories']} />
                 </div>
                 <div id="web-vitals-grid">
-                  <WebVitalsGrid audits={report.lighthouse_json?.audits} />
+                  <WebVitalsGrid audits={report.lighthouse_json?.audits as WebVitalsGridProps['audits']} />
                 </div>
                 <div>
                   <PerformanceSimulator baseScore={report.performance_score || 0} />
@@ -220,7 +253,7 @@ export default function SharedReportPage() {
             )}
 
             {/* AI INSIGHTS TAB */}
-            {activeTab === 'ai' && (
+            {activeTab === 'insights' && (
               <motion.div
                 key="ai"
                 initial={{ opacity: 0, y: 10 }}
@@ -245,7 +278,7 @@ export default function SharedReportPage() {
                 transition={{ duration: 0.3 }}
                 id="network-waterfall"
               >
-                <NetworkWaterfall audits={report.lighthouse_json?.audits} />
+                <NetworkWaterfall audits={report.lighthouse_json?.audits as NetworkWaterfallProps['audits']} />
               </motion.div>
             )}
 

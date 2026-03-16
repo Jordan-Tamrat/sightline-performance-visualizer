@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useMemo, useState, useRef } from 'react';
+import React, { useMemo, useState, useRef, useEffect } from 'react';
 import {
     BarChart,
     Bar,
@@ -188,14 +188,24 @@ const CustomTooltip = ({ active, payload }: { active?: boolean; payload?: { payl
     return null;
 };
 
-const CustomYAxisTick = (props: any) => {
+interface CustomYAxisTickProps {
+    y?: number;
+    payload?: {
+        index: number;
+        value: string;
+    };
+    chartData: ChartData[];
+}
+
+const CustomYAxisTick = (props: CustomYAxisTickProps) => {
     const { y, payload, chartData } = props;
+    if (!payload || y === undefined) return null;
     const index = payload.index;
     const data = chartData?.[index];
     if (!data) return null;
 
     return (
-        <foreignObject x={0} y={y - 18} width={260} height={35}>
+        <foreignObject x={0} y={y - 18} width={chartData?.[0]?.url ? (typeof window !== 'undefined' && window.innerWidth < 768 ? 120 : 260) : 260} height={35}>
             <div className="flex flex-col justify-center h-full px-4 border-r border-zinc-200 dark:border-zinc-800/30 transition-colors">
                 <span className="text-[11px] font-bold truncate block w-full text-zinc-800 dark:text-zinc-100" title={data.url}>
                     {data.name}
@@ -216,9 +226,19 @@ export default function NetworkWaterfall({ audits }: NetworkWaterfallProps) {
 
     // Tracking state for the live marker
     const [markerPos, setMarkerPos] = useState<{ x: number, time: number } | null>(null);
+    const [isMobile, setIsMobile] = useState(false);
     const containerRef = useRef<HTMLDivElement>(null);
     const headerContainerRef = useRef<HTMLDivElement>(null);
     const headerDimensions = useResizeObserver(headerContainerRef);
+
+    useEffect(() => {
+        const checkMobile = () => setIsMobile(window.innerWidth < 768);
+        checkMobile();
+        window.addEventListener('resize', checkMobile);
+        return () => window.removeEventListener('resize', checkMobile);
+    }, []);
+
+    const yAxisWidth = isMobile ? 120 : 260;
 
     const renderBlockingSet = useMemo(() => {
         const urls = audits['render-blocking-resources']?.details?.items?.map((item) => item.url) || [];
@@ -424,10 +444,10 @@ export default function NetworkWaterfall({ audits }: NetworkWaterfallProps) {
                 <div style={{ width: `${100 * zoom}%`, minWidth: '100%' }}>
 
                     {/* ENHANCED STICKY HEADER: Resource Label + Time Scale Axis */}
-                    <div className="sticky top-0 z-50 bg-white dark:bg-zinc-950 border-b border-zinc-200 dark:border-zinc-900 flex">
+                    <div className="sticky top-0 z-10 bg-white dark:bg-zinc-950 border-b border-zinc-200 dark:border-zinc-900 flex">
                         {/* Resource Column Header */}
                         {!isYAxisHidden && (
-                            <div className="w-[260px] shrink-0 border-r border-zinc-200 dark:border-zinc-900 bg-zinc-50/50 dark:bg-zinc-900/50 px-4 flex items-center h-[45px]">
+                            <div style={{ width: yAxisWidth }} className="shrink-0 border-r border-zinc-200 dark:border-zinc-900 bg-zinc-50/50 dark:bg-zinc-900/50 px-4 flex items-center h-[45px]">
                                 <span className="text-[10px] font-black uppercase tracking-widest text-zinc-400 dark:text-zinc-500">Resource</span>
                             </div>
                         )}
@@ -496,13 +516,13 @@ export default function NetworkWaterfall({ audits }: NetworkWaterfallProps) {
                                     hide={true}
                                 />
                                 <YAxis
-                                    dataKey="id"
                                     type="category"
-                                    width={260}
-                                    interval={0}
+                                    dataKey="id"
                                     tick={<CustomYAxisTick chartData={chartData} />}
+                                    width={yAxisWidth}
                                     axisLine={false}
-                                    hide={isYAxisHidden}
+                                    tickLine={false}
+                                    interval={0}
                                 />
                                 <Tooltip
                                     content={<CustomTooltip />}
