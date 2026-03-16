@@ -454,7 +454,7 @@ export default function ResultPage() {
                 <div id="visual-timeline" className="space-y-4">
             <div className="flex items-end justify-between mb-4">
               <div>
-                <h3 className="text-xl font-semibold mb-1">Visual Loading Timeline</h3>
+                <h3 className="text-xl font-black uppercase tracking-tighter italic mb-1">Visual Loading Timeline</h3>
                 <p className="text-sm text-zinc-400">See exactly how your page loads frame-by-frame. Generated from Lighthouse trace.</p>
               </div>
             </div>
@@ -495,7 +495,7 @@ export default function ResultPage() {
                 {/* Screenshot */}
                 {report.screenshot && (
                   <div className="space-y-4">
-              <h3 className="text-xl font-semibold">Final Screenshot</h3>
+              <h3 className="text-xl font-black uppercase tracking-tighter italic">Final Screenshot</h3>
               <div className={clsx(
                 "bg-zinc-900 border border-zinc-800 rounded-2xl overflow-y-auto w-full flex justify-center p-1 scrollbar-thin scrollbar-thumb-zinc-700 scrollbar-track-transparent",
                 report.device_type === 'mobile' ? "max-h-[600px] max-w-sm mx-auto" : ""

@@ -66,7 +66,7 @@ export default function AIInsightsPanel({ aiSummary, onAction }: AIInsightsPanel
           </div>
           <div>
             <h3 className="text-[10px] font-black text-indigo-500 dark:text-indigo-400 uppercase tracking-[0.3em] mb-2">Automated Analysis</h3>
-            <h4 className="text-2xl font-bold bg-gradient-to-r from-zinc-900 to-zinc-600 dark:from-white dark:to-zinc-400 bg-clip-text text-transparent leading-tight mb-3 italic">
+            <h4 className="text-xl font-black uppercase tracking-tighter bg-gradient-to-r from-zinc-900 to-zinc-600 dark:from-white dark:to-zinc-400 bg-clip-text text-transparent leading-tight mb-3 italic">
               AI Performance Assessment
             </h4>
             <p className="text-zinc-700 dark:text-zinc-300 text-lg leading-relaxed max-w-4xl font-medium">

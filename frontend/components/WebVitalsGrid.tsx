@@ -157,7 +157,7 @@ export default function WebVitalsGrid({ audits }: WebVitalsGridProps) {
         <div className="space-y-4">
             <div className="flex items-center gap-2 mb-2">
                 <Activity className="w-5 h-5 text-blue-500" />
-                <h3 className="text-xl font-semibold">Web Vitals</h3>
+                <h3 className="text-xl font-black uppercase tracking-tighter italic">Web Vitals</h3>
             </div>
 
             <div className="grid grid-cols-1 md:grid-cols-3 gap-4">

@@ -4,11 +4,12 @@ from .models import Report, SharedReport
 import subprocess
 import json
 import os
-import google.generativeai as genai
+import google.genai as genai
 from playwright.sync_api import sync_playwright
 from django.core.files import File
 from django.utils import timezone
 from datetime import timedelta
+from django.db import transaction
 import time
 
 # ─── Device and Network Configuration ───────────────────────────────────────
@@ -184,8 +185,7 @@ def generate_ai_summary(lighthouse_data, url):
         if not gemini_api_key:
             return "Gemini API Key not configured."
 
-        genai.configure(api_key=gemini_api_key)
-        model = genai.GenerativeModel('gemini-2.5-flash')
+        client = genai.Client(api_key=gemini_api_key)
         
         # Prepare Context - Providing specific Core Metrics for data-driven analysis
         audits = lighthouse_data.get('audits', {})
@@ -269,8 +269,11 @@ def generate_ai_summary(lighthouse_data, url):
             f"Provide RAW JSON only."
         )
         
-        response = model.generate_content(prompt)
-        
+        response = client.models.generate_content(
+            model='gemini-2.5-flash',
+            contents=prompt,
+        )
+
         # Robustly extract JSON object between first { and last }
         text = response.text.strip()
         start_idx = text.find('{')
@@ -382,10 +385,18 @@ def run_audit(self, report_id):
 
         # 4. AI Summary (STEP 3)
         report.ai_summary = generate_ai_summary(lighthouse_data, url)
-        
-        # Final Step Complete
-        report.status = 'completed'
-        report.save()
+
+        # 5. Assign a consecutive display_number — only successful audits get one.
+        # Use select_for_update inside a transaction to prevent race conditions.
+        with transaction.atomic():
+            report_locked = Report.objects.select_for_update().get(id=report_id)
+            max_num = Report.objects.filter(
+                display_number__isnull=False
+            ).order_by('-display_number').values_list('display_number', flat=True).first()
+            report_locked.display_number = (max_num or 0) + 1
+            report_locked.status = 'completed'
+            report_locked.ai_summary = report.ai_summary
+            report_locked.save()
 
         return f"Audit completed for {url}"
 

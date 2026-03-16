@@ -34,6 +34,7 @@ class Report(models.Model):
     ai_summary = models.TextField(null=True, blank=True)
     screenshot = models.ImageField(upload_to='screenshots/', null=True, blank=True)
     created_at = models.DateTimeField(auto_now_add=True)
+    display_number = models.IntegerField(null=True, blank=True, unique=True, db_index=True)
 
     def __str__(self):
         return f"{self.url} - {self.status}"

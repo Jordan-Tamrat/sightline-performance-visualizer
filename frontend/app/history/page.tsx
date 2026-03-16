@@ -14,6 +14,7 @@ interface Report {
     network_type: '4g' | 'fast3g' | 'slow3g';
     performance_score: number | null;
     created_at: string;
+    display_number: number | null;
 }
 
 export default function HistoryPage() {
@@ -78,7 +79,7 @@ export default function HistoryPage() {
                         <div className="absolute -bottom-1 left-0 w-1/3 h-1 bg-blue-500 rounded-full"></div>
                     </h1>
                     <p className="text-zinc-500 dark:text-zinc-400 mt-2">
-                        Your previous autonomous audits are saved anonymously below.
+                        Your previous autonomous audits are saved anonymously below. <br />Only the most recent 20 audits are shown, and reports older than 15 days are permanently removed.
                     </p>
                 </div>
 
@@ -123,24 +124,31 @@ export default function HistoryPage() {
                 >
                     <div className="overflow-x-auto">
                         <table className="w-full text-left border-collapse">
-                            <thead>
-                                <tr className="bg-zinc-50 dark:bg-zinc-900/50 text-zinc-500 dark:text-zinc-400 text-sm font-medium border-b border-zinc-200 dark:border-zinc-800">
+                    <thead>
+                            <tr className="bg-zinc-50 dark:bg-zinc-900/50 text-zinc-500 dark:text-zinc-400 text-sm font-medium border-b border-zinc-200 dark:border-zinc-800">
+                                    <th className="px-4 py-4 font-medium tracking-wide text-center w-16">#</th>
                                     <th className="px-6 py-4 font-medium tracking-wide">Target URL</th>
                                     <th className="px-6 py-4 font-medium tracking-wide">Configuration</th>
                                     <th className="px-6 py-4 font-medium tracking-wide">Performance</th>
                                     <th className="px-6 py-4 font-medium tracking-wide">Date & Time</th>
                                     <th className="px-6 py-4 font-medium tracking-wide text-right">Actions</th>
                                 </tr>
-                            </thead>
+                    </thead>
                             <tbody className="divide-y divide-zinc-200 dark:divide-zinc-800">
                                 {reports.map((report) => (
                                     <tr key={report.id} className="group hover:bg-zinc-50 dark:hover:bg-zinc-800/50 transition-colors">
+                                        <td className="px-4 py-5 text-center">
+                                            {report.display_number !== null && report.display_number !== undefined ? (
+                                                <span className="inline-flex items-center justify-center w-8 h-8 rounded-full bg-blue-500/10 text-blue-600 dark:text-blue-400 text-xs font-black tracking-tight">
+                                                    #{report.display_number}
+                                                </span>
+                                            ) : (
+                                                <span className="text-xs text-zinc-400">—</span>
+                                            )}
+                                        </td>
                                         <td className="px-6 py-5">
                                             <div className="font-medium text-zinc-900 dark:text-zinc-100 flex items-center gap-2 max-w-xs truncate">
                                                 {report.url.replace(/^https?:\/\//, '')}
-                                            </div>
-                                            <div className="text-xs text-zinc-500 dark:text-zinc-500 font-mono mt-1 w-full truncate max-w-xs" style={{ direction: 'rtl', textOverflow: 'clip' }}>
-                                                {report.id}
                                             </div>
                                         </td>
                                         <td className="px-6 py-5">

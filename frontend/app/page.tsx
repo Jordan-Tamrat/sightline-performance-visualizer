@@ -396,6 +396,13 @@ export default function Home() {
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!url) return;
+
+    // Basic URL validation: Check for protocol
+    if (!url.startsWith('http://') && !url.startsWith('https://')) {
+      setError('Please enter a complete URL starting with http:// or https:// (e.g., https://google.com)');
+      return;
+    }
+
     setLoading(true);
     setError(null);
     try {
@@ -515,11 +522,10 @@ export default function Home() {
             <div className="flex flex-col sm:flex-row gap-3 justify-center items-center max-w-2xl mx-auto">
               <div className="relative w-full">
                 <input
-                  type="url"
+                  type="text"
                   placeholder="https://your-website.com"
                   value={url}
                   onChange={(e) => setUrl(e.target.value)}
-                  required
                   className="w-full px-6 py-4 rounded-2xl bg-white dark:bg-zinc-900 border border-zinc-300 dark:border-zinc-700 focus:outline-none focus:border-blue-500 focus:ring-2 focus:ring-blue-500/20 transition-all text-base placeholder:text-zinc-400 shadow-sm"
                 />
               </div>

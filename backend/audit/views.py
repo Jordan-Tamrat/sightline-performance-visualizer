@@ -74,7 +74,8 @@ class ReportViewSet(viewsets.ModelViewSet):
                 'device_type': r.device_type,
                 'network_type': r.network_type,
                 'performance_score': r.performance_score,
-                'created_at': r.created_at
+                'created_at': r.created_at,
+                'display_number': r.display_number,
             }
             for r in reports
         ]
