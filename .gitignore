@@ -45,3 +45,6 @@ docker-compose.override.yml
 
 # Trae
 .trae/
+
+# Celery Beat
+backend/celerybeat-schedule

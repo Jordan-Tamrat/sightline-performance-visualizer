@@ -7,7 +7,5 @@ playwright
 google-genai
 gunicorn
 django-cors-headers
-django-celery-results
-django-celery-beat
 requests
 Pillow

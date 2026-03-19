@@ -1,4 +1,4 @@
-from rest_framework import viewsets
+from rest_framework import viewsets, throttling
 from rest_framework.decorators import action
 from rest_framework.response import Response
 from rest_framework.views import APIView
@@ -13,6 +13,12 @@ from .tasks import run_audit
 class ReportViewSet(viewsets.ModelViewSet):
     queryset = Report.objects.all().order_by('-created_at')
     serializer_class = ReportSerializer
+    
+    def get_throttles(self):
+        if self.action == 'create':
+            self.throttle_scope = 'audit_create'
+            return [throttling.ScopedRateThrottle()]
+        return []
 
     def perform_create(self, serializer):
         report = serializer.save()
@@ -251,6 +257,8 @@ class ReportViewSet(viewsets.ModelViewSet):
         return Response({'frames': filled_frames})
 
 class SharedReportView(APIView):
+    throttle_classes = []
+    
     def get(self, request, token):
         shared_report = get_object_or_404(SharedReport, share_token=token)
         

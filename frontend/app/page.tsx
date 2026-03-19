@@ -417,7 +417,11 @@ export default function Home() {
       router.push(`/results/${response.data.id}`);
     } catch (err: unknown) {
       console.error('Error creating report:', err);
-      setError(err instanceof Error ? err.message : 'Failed to connect to the server.');
+      if (axios.isAxiosError(err) && err.response?.status === 429) {
+        setError('You have reached your audit limit. You cannot request more than 5 audits per hour.');
+      } else {
+        setError(err instanceof Error ? err.message : 'Failed to connect to the server.');
+      }
       setLoading(false);
     }
   };

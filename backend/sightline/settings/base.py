@@ -33,8 +33,6 @@ INSTALLED_APPS = [
     # Third party apps
     'rest_framework',
     'corsheaders',
-    'django_celery_results',
-    'django_celery_beat',
     
     # Local apps
     'audit',
@@ -77,11 +75,11 @@ WSGI_APPLICATION = 'sightline.wsgi.application'
 DATABASES = {
     'default': {
         'ENGINE': 'django.db.backends.postgresql',
-        'NAME': os.environ.get('DATABASE_NAME', 'sightline'),
-        'USER': os.environ.get('DATABASE_USER', 'sightline'),
-        'PASSWORD': os.environ.get('DATABASE_PASSWORD', 'sightline'),
-        'HOST': os.environ.get('DATABASE_HOST', 'db'),
-        'PORT': os.environ.get('DATABASE_PORT', '5432'),
+        'NAME': os.environ.get('DATABASE_NAME'),
+        'USER': os.environ.get('DATABASE_USER'),
+        'PASSWORD': os.environ.get('DATABASE_PASSWORD'),
+        'HOST': os.environ.get('DATABASE_HOST'),
+        'PORT': os.environ.get('DATABASE_PORT'),
     }
 }
 
@@ -132,22 +130,35 @@ MEDIA_ROOT = BASE_DIR / 'media'
 DEFAULT_AUTO_FIELD = 'django.db.models.BigAutoField'
 
 # Celery Configuration
-CELERY_BROKER_URL = os.environ.get('CELERY_BROKER_URL', 'redis://redis:6379/0')
-CELERY_RESULT_BACKEND = os.environ.get('CELERY_RESULT_BACKEND', 'redis://redis:6379/0')
+CELERY_BROKER_URL = os.environ.get('CELERY_BROKER_URL')
+CELERY_RESULT_BACKEND = os.environ.get('CELERY_RESULT_BACKEND')
 CELERY_ACCEPT_CONTENT = ['application/json']
 CELERY_TASK_SERIALIZER = 'json'
 CELERY_RESULT_SERIALIZER = 'json'
 CELERY_TIMEZONE = TIME_ZONE
 
 CELERY_BEAT_SCHEDULE = {
-    'cleanup-old-reports-weekly': {
+    'cleanup-old-reports-daily': {
         'task': 'audit.tasks.cleanup_old_reports',
-        'schedule': crontab(hour=0, minute=0, day_of_week='monday'),
+        'schedule': crontab(hour=0, minute=0),
     },
     'cleanup-expired-shares-daily': {
         'task': 'audit.tasks.cleanup_expired_shares',
         'schedule': crontab(hour=0, minute=0),
     },
+}
+
+# REST Framework Configuration
+REST_FRAMEWORK = {
+    'DEFAULT_THROTTLE_CLASSES': [
+        'rest_framework.throttling.AnonRateThrottle',
+        'rest_framework.throttling.UserRateThrottle'
+    ],
+    'DEFAULT_THROTTLE_RATES': {
+        'anon': '100/day',
+        'user': '1000/day',
+        'audit_create': '5/hour', # Strict limit for resource-intensive audits
+    }
 }
 
 # Gemini API Key

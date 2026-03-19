@@ -9,6 +9,12 @@ if not SECRET_KEY:
 _hosts = os.environ.get('DJANGO_ALLOWED_HOSTS')
 if not _hosts:
     raise ImproperlyConfigured('DJANGO_ALLOWED_HOSTS must be set in production')
+
+# Database configuration validation for production
+for var in ['DATABASE_NAME', 'DATABASE_USER', 'DATABASE_PASSWORD', 'DATABASE_HOST']:
+    if not os.environ.get(var):
+        raise ImproperlyConfigured(f'{var} must be set in production')
+
 ALLOWED_HOSTS = _hosts.split()
 
 # CORS Configuration
