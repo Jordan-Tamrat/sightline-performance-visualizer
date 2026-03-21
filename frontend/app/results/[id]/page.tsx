@@ -15,11 +15,6 @@ import PerformanceSimulator from '@/components/PerformanceSimulator';
 import AIInsightsPanel from '@/components/AIInsightsPanel';
 import { InsightAction } from '@/components/InsightCard';
 
-// Interface Issue removed as it is now unused.
-
-// Interface Issue removed if unused, but it's used in AISummary which is removed.
-// Removed unused AISummary interface.
-
 interface Report {
   id: number;
   url: string;
@@ -40,7 +35,6 @@ export default function ResultPage() {
   const params = useParams();
   const id = params?.id as string;
   const [report, setReport] = useState<Report | null>(null);
-  // Removed unused loading state
   const [error, setError] = useState('');
   const [showReveal, setShowReveal] = useState(false);
   const [hasRevealed, setHasRevealed] = useState(false);
@@ -138,7 +132,7 @@ export default function ResultPage() {
       const timer = setTimeout(() => {
         setShowReveal(false);
         setHasRevealed(true);
-      }, 2500); // Wait 2.5s for gauge to animate before revealing full UI
+      }, 2500); 
 
       // Fetch filmstrip
       const fetchFilmstrip = async () => {

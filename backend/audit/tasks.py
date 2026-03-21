@@ -11,6 +11,15 @@ from django.utils import timezone
 from datetime import timedelta
 from django.db import transaction
 import time
+import socket
+from contextlib import closing
+
+def get_free_port():
+    """Finds an available ephemeral port for concurrent Playwright/Lighthouse runs."""
+    with closing(socket.socket(socket.AF_INET, socket.SOCK_STREAM)) as s:
+        s.bind(('', 0))
+        s.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
+        return s.getsockname()[1]
 
 # ─── Device and Network Configuration ───────────────────────────────────────
 
@@ -70,7 +79,7 @@ def run_lighthouse(url, report_id, network_preset, port=9222, chrome_path=None, 
         "--only-categories=performance,accessibility,best-practices,seo",
         "--save-assets",
         "--disable-full-page-screenshot",
-        "--max-wait-for-load=180000",
+        "--max-wait-for-load=300000",
         
         # Enable DevTools throttling and pass custom dynamic parameters
         "--throttling-method=devtools",
@@ -101,25 +110,33 @@ def run_lighthouse(url, report_id, network_preset, port=9222, chrome_path=None, 
         env["CHROME_PATH"] = chrome_path
         print(f"Lighthouse using CHROME_PATH: {chrome_path}")
     
+    timed_out = False
     try:
-        # Added timeout=210s protection (increased for trace generation)
+        # Added timeout=330s protection (increased for trace generation)
         subprocess.run(
             cmd, 
             check=True, 
             stdout=subprocess.PIPE, 
             stderr=subprocess.PIPE, 
             env=env,
-            timeout=210
+            timeout=330
         )
     except subprocess.TimeoutExpired:
-        raise Exception("Lighthouse audit timed out after 180 seconds.")
+        timed_out = True
+        if os.path.exists(lighthouse_report_path):
+            print("Lighthouse audit timed out, but a report was generated. Proceeding gracefully.")
+        else:
+            raise Exception("Lighthouse audit completely timed out and no report was generated.")
     except subprocess.CalledProcessError as e:
-        error_msg = f"Lighthouse command failed with exit code {e.returncode}."
-        if e.stderr:
-            error_msg += f"\nStderr: {e.stderr.decode()}"
-        if e.stdout:
-            error_msg += f"\nStdout: {e.stdout.decode()}"
-        raise Exception(error_msg)
+        if os.path.exists(lighthouse_report_path):
+            print(f"Lighthouse exited with code {e.returncode} (likely due to max-wait-for-load limit), but a report was generated. Proceeding gracefully.")
+        else:
+            error_msg = f"Lighthouse command failed with exit code {e.returncode}."
+            if e.stderr:
+                error_msg += f"\nStderr: {e.stderr.decode()}"
+            if e.stdout:
+                error_msg += f"\nStdout: {e.stdout.decode()}"
+            raise Exception(error_msg)
         
     # Read the main report
     with open(lighthouse_report_path, 'r', encoding='utf-8') as f:
@@ -176,7 +193,7 @@ def run_lighthouse(url, report_id, network_preset, port=9222, chrome_path=None, 
     if os.path.exists(lighthouse_report_path):
         os.remove(lighthouse_report_path)
         
-    return lighthouse_data, lighthouse_report_path
+    return lighthouse_data, lighthouse_report_path, timed_out
 
 def generate_ai_summary(lighthouse_data, url):
     """Generates an AI summary using Gemini."""
@@ -318,13 +335,16 @@ def run_audit(self, report_id):
         # 1. Launch Playwright with Remote Debugging
         screenshot_path = f"/tmp/screenshot_{report_id}.png"
         
+        # Get dynamic port for concurrent audits
+        debug_port = get_free_port()
+        
         # Start Playwright
         p = sync_playwright().start()
         
-        # Launch browser with remote debugging port 9222
+        # Launch browser with remote debugging port dynamically assigned
         browser = p.chromium.launch(
             headless=True,
-            args=['--remote-debugging-port=9222']
+            args=[f'--remote-debugging-port={debug_port}']
         )
         
         # Save early progress update (browser ready, initializing)
@@ -333,13 +353,13 @@ def run_audit(self, report_id):
         # 2. Run Lighthouse FIRST (STEP 1: Ensures 100% untouched browser state for pure benchmark)
         network_preset = NETWORK_PRESETS.get(network_type, NETWORK_PRESETS['4g'])
         executable_path = p.chromium.executable_path
-        print(f"Running Lighthouse on port 9222 (Binary: {executable_path}) for {url}...")
+        print(f"Running Lighthouse on port {debug_port} (Binary: {executable_path}) for {url}...")
         
-        lighthouse_data, lighthouse_report_path = run_lighthouse(
+        lighthouse_data, lighthouse_report_path, lighthouse_timed_out = run_lighthouse(
             url, 
             report_id, 
             network_preset=network_preset,
-            port=9222, 
+            port=debug_port, 
             chrome_path=executable_path,
             device_type=device_type,
         )
@@ -351,59 +371,127 @@ def run_audit(self, report_id):
         report.save()
 
         # 3. Take High-Quality Screenshot with Playwright (STEP 2: Safe to warm up resources now)
-        print(f"Taking high-res screenshot for {url}...")
-        
-        # Prepare context for screenshot
-        device_config = DEVICE_CONFIGS.get(device_type, DEVICE_CONFIGS['desktop'])
-        context = browser.new_context(
-            viewport=device_config['viewport'],
-            is_mobile=device_config['is_mobile'],
-            has_touch=device_config['has_touch'],
-            device_scale_factor=device_config['device_scale_factor'],
-        )
-        page = context.new_page()
-        
-        try:
-            # Navigate quickly just to get the visual state
-            page.goto(url, timeout=120000, wait_until='networkidle')
+        # Skip this if Lighthouse already timed out (site is likely too slow/unresponsive)
+        if not lighthouse_timed_out:
+            print(f"Taking high-res screenshot for {url}...")
             
-            # Take a high-quality screenshot
-            page.screenshot(path=screenshot_path, full_page=False)
+            # Prepare context for screenshot
+            device_config = DEVICE_CONFIGS.get(device_type, DEVICE_CONFIGS['desktop'])
+            context = browser.new_context(
+                viewport=device_config['viewport'],
+                is_mobile=device_config['is_mobile'],
+                has_touch=device_config['has_touch'],
+                device_scale_factor=device_config['device_scale_factor'],
+            )
+            page = context.new_page()
             
-            # Save screenshot to DB (Step 2 Complete)
-            if os.path.exists(screenshot_path):
-                with open(screenshot_path, 'rb') as f:
-                    report.screenshot.save(f"screenshot_{report_id}.png", File(f), save=True)
-                print(f"High-quality screenshot captured and saved for {url}")
-        except Exception as ss_err:
-            print(f"Screenshot capture failed (non-critical): {ss_err}")
-        finally:
-            try: page.close()
-            except: pass
-            try: context.close()
-            except: pass
+            try:
+                # Navigate quickly just to get the visual state
+                page.goto(url, timeout=120000, wait_until='networkidle')
+                
+                # Take a high-quality screenshot
+                page.screenshot(path=screenshot_path, full_page=False)
+                
+                # Save screenshot to DB (Step 2 Complete)
+                if os.path.exists(screenshot_path):
+                    with open(screenshot_path, 'rb') as f:
+                        report.screenshot.save(f"screenshot_{report_id}.png", File(f), save=True)
+                    print(f"High-quality screenshot captured and saved for {url}")
+            except Exception as ss_err:
+                print(f"Screenshot capture failed (non-critical): {ss_err}")
+                try:
+                    print(f"Attempting to use Lighthouse fallback screenshot for {url}...")
+                    fallback_b64 = None
+                    
+                    # 1. Try final-screenshot audit from Lighthouse first
+                    final_ss_audit = lighthouse_data.get('audits', {}).get('final-screenshot', {})
+                    if final_ss_audit.get('details') and final_ss_audit['details'].get('data'):
+                        fallback_b64 = final_ss_audit['details']['data']
+                    
+                    # 2. Try last trace screenshot if final-screenshot is not available
+                    if not fallback_b64:
+                        trace_events = lighthouse_data.get('trace_screenshots', [])
+                        screenshots = [e for e in trace_events if e.get('name') == 'Screenshot']
+                        if screenshots:
+                            # Get the last screenshot
+                            snapshot = screenshots[-1].get('args', {}).get('snapshot')
+                            if snapshot:
+                                fallback_b64 = f"data:image/jpeg;base64,{snapshot}"
+                    
+                    if fallback_b64 and fallback_b64.startswith('data:image/'):
+                        import base64
+                        # Extract the base64 part
+                        header, encoded = fallback_b64.split(',', 1)
+                        image_data = base64.b64decode(encoded)
+                        
+                        with open(screenshot_path, 'wb') as f:
+                            f.write(image_data)
+                        
+                        with open(screenshot_path, 'rb') as f:
+                            report.screenshot.save(f"screenshot_{report_id}_fallback.jpg", File(f), save=True)
+                        print(f"Fallback screenshot saved successfully for {url}")
+                    else:
+                        print(f"No fallback screenshot found in Lighthouse data for {url}.")
+                except Exception as fallback_err:
+                    print(f"Fallback screenshot processing also failed: {fallback_err}")
+            finally:
+                try: page.close()
+                except: pass
+                try: context.close()
+                except: pass
+        else:
+            print(f"Skipping Playwright screenshot capture because Lighthouse timed out for {url}. Attempting fallback immediately.")
+            try:
+                # Try fallback immediately from lighthouse_data
+                fallback_b64 = None
+                final_ss_audit = lighthouse_data.get('audits', {}).get('final-screenshot', {})
+                if final_ss_audit.get('details') and final_ss_audit['details'].get('data'):
+                    fallback_b64 = final_ss_audit['details']['data']
+                
+                if not fallback_b64:
+                    trace_events = lighthouse_data.get('trace_screenshots', [])
+                    screenshots = [e for e in trace_events if e.get('name') == 'Screenshot']
+                    if screenshots:
+                        snapshot = screenshots[-1].get('args', {}).get('snapshot')
+                        if snapshot:
+                            fallback_b64 = f"data:image/jpeg;base64,{snapshot}"
+                
+                if fallback_b64 and fallback_b64.startswith('data:image/'):
+                    import base64
+                    header, encoded = fallback_b64.split(',', 1)
+                    image_data = base64.b64decode(encoded)
+                    with open(screenshot_path, 'wb') as f:
+                        f.write(image_data)
+                    with open(screenshot_path, 'rb') as f:
+                        report.screenshot.save(f"screenshot_{report_id}_fallback_lh.jpg", File(f), save=True)
+                    print(f"Lighthouse-only fallback screenshot saved for {url}")
+            except Exception as lh_fallback_err:
+                print(f"Lighthouse-only fallback screenshot failed: {lh_fallback_err}")
 
         # 4. AI Summary (STEP 3)
         report.ai_summary = generate_ai_summary(lighthouse_data, url)
 
-        # 5. Assign a consecutive display_number — only successful audits get one.
-        # Use select_for_update inside a transaction to prevent race conditions.
-        with transaction.atomic():
-            report_locked = Report.objects.select_for_update().get(id=report_id)
-            max_num = Report.objects.filter(
-                display_number__isnull=False
-            ).order_by('-display_number').values_list('display_number', flat=True).first()
-            report_locked.display_number = (max_num or 0) + 1
-            report_locked.status = 'completed'
-            report_locked.ai_summary = report.ai_summary
-            report_locked.save()
+        # 5. Complete Audit
+        report.status = 'completed'
+        report.ai_summary = report.ai_summary
+        report.save()
 
         return f"Audit completed for {url}"
 
     except Exception as e:
         print(f"Error auditing report_id={report_id}: {e}")
         
-        # Retry logic if within retry limits
+        # Determine if we should retry
+        is_timeout = "timed out" in str(e).lower() or isinstance(e, subprocess.TimeoutExpired)
+        
+        # Don't retry on timeouts (they often happen repeatedly on slow sites)
+        if is_timeout:
+             report.status = 'failed'
+             report.ai_summary = f"Audit timed out after search limit. The site is likely too slow or unresponsive to benchmark reliably."
+             report.save()
+             return f"Audit timed out for report_id={report_id}"
+
+        # Retry logic if within retry limits (for other errors)
         try:
             # Re-raise to let Celery handle retry
             raise self.retry(exc=e)

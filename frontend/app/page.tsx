@@ -418,7 +418,7 @@ export default function Home() {
     } catch (err: unknown) {
       console.error('Error creating report:', err);
       if (axios.isAxiosError(err) && err.response?.status === 429) {
-        setError('You have reached your audit limit. You cannot request more than 5 audits per hour.');
+        setError('You have reached your audit limit. You cannot request more than 5 audits per day.');
       } else {
         setError(err instanceof Error ? err.message : 'Failed to connect to the server.');
       }

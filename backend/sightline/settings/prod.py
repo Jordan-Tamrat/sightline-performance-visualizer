@@ -15,15 +15,20 @@ for var in ['DATABASE_NAME', 'DATABASE_USER', 'DATABASE_PASSWORD', 'DATABASE_HOS
     if not os.environ.get(var):
         raise ImproperlyConfigured(f'{var} must be set in production')
 
-ALLOWED_HOSTS = _hosts.split()
+ALLOWED_HOSTS = [host.strip() for host in _hosts.split(',')]
 
 # CORS Configuration
 CORS_ALLOW_ALL_ORIGINS = False
 _cors = os.environ.get('CORS_ALLOWED_ORIGINS', '')
-CORS_ALLOWED_ORIGINS = _cors.split() if _cors else []
+if not _cors:
+    raise ImproperlyConfigured('CORS_ALLOWED_ORIGINS must be set in production')
+CORS_ALLOWED_ORIGINS = [origin.strip() for origin in _cors.split(',')]
 
-# Optional security hardening
-# SESSION_COOKIE_SECURE = True
-# CSRF_COOKIE_SECURE = True
-# SECURE_HSTS_SECONDS = int(os.environ.get('SECURE_HSTS_SECONDS', '3600'))
-# SECURE_SSL_REDIRECT = True
+# Simple Logging for Production
+LOGGING = {
+    'version': 1,
+    'disable_existing_loggers': False,
+    'handlers': {'console': {'class': 'logging.StreamHandler'}},
+    'root': {'handlers': ['console'], 'level': 'INFO'},
+}
+
