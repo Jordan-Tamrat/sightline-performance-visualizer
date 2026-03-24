@@ -31,8 +31,11 @@ RUN npm install -g lighthouse
 # Copy project code
 COPY . .
 
+# Make startup script executable
+RUN chmod +x start.sh
+
 # Expose port
 EXPOSE 8000
 
-# Default command (overridden in docker-compose)
-CMD ["python", "manage.py", "runserver", "0.0.0.0:8000"]
+# Use the combined startup script
+CMD ["sh", "start.sh"]
