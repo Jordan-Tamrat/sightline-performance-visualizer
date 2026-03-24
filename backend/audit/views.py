@@ -6,9 +6,11 @@ from django.shortcuts import get_object_or_404
 from django.utils import timezone
 from datetime import timedelta
 from django.conf import settings
+from django.http import JsonResponse
+from django.views import View
 from .models import Report, SharedReport
 from .serializers import ReportSerializer, SharedReportSerializer
-from .tasks import run_audit
+from .tasks import run_audit, cleanup_old_reports, cleanup_expired_shares
 
 class ReportViewSet(viewsets.ModelViewSet):
     queryset = Report.objects.all().order_by('-created_at')
@@ -279,3 +281,35 @@ class SharedReportView(APIView):
         shared_report.is_active = False
         shared_report.save(update_fields=['is_active'])
         return Response({'message': 'Share link revoked successfully.'})
+
+
+class CronCleanupView(View):
+    """
+    Protected endpoint called by Vercel Cron (or any external scheduler) once per day.
+    Runs both cleanup tasks directly without needing Celery Beat.
+
+    Security: Requires the Authorization header to match the CRON_SECRET env variable.
+    Vercel sets this automatically when you define 'Authorization' in vercel.json crons.
+    """
+    def post(self, request):
+        expected_secret = getattr(settings, 'CRON_SECRET', None)
+
+        # Reject requests without a configured secret
+        if not expected_secret:
+            return JsonResponse({'error': 'Cron endpoint is not configured.'}, status=503)
+
+        # Validate Authorization header: "Bearer <token>"
+        auth_header = request.headers.get('Authorization', '')
+        if auth_header != f'Bearer {expected_secret}':
+            return JsonResponse({'error': 'Unauthorized.'}, status=401)
+
+        # Run cleanups directly (no Celery needed for scheduled tasks)
+        reports_result = cleanup_old_reports()
+        shares_result = cleanup_expired_shares()
+
+        return JsonResponse({
+            'status': 'ok',
+            'reports': reports_result,
+            'shares': shares_result,
+        })
+

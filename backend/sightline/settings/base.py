@@ -13,7 +13,6 @@ https://docs.djangoproject.com/en/6.0/ref/settings/
 from pathlib import Path
 import os
 from django.core.exceptions import ImproperlyConfigured
-from celery.schedules import crontab
 
 # Build paths inside the project like this: BASE_DIR / 'subdir'.
 # BASE_DIR is now one level deeper due to settings package
@@ -152,16 +151,7 @@ if CELERY_BROKER_URL and CELERY_BROKER_URL.startswith('rediss://'):
     CELERY_BROKER_USE_SSL = {'ssl_cert_reqs': ssl.CERT_NONE}
     CELERY_REDIS_BACKEND_USE_SSL = {'ssl_cert_reqs': ssl.CERT_NONE}
 
-CELERY_BEAT_SCHEDULE = {
-    'cleanup-old-reports-daily': {
-        'task': 'audit.tasks.cleanup_old_reports',
-        'schedule': crontab(hour=0, minute=0),
-    },
-    'cleanup-expired-shares-daily': {
-        'task': 'audit.tasks.cleanup_expired_shares',
-        'schedule': crontab(hour=0, minute=0),
-    },
-}
+
 
 # REST Framework Configuration
 REST_FRAMEWORK = {
@@ -181,3 +171,7 @@ GEMINI_API_KEY = os.environ.get('GEMINI_API_KEY')
 
 # Base URL for Share Links
 BASE_URL = os.environ.get("BASE_URL", "http://localhost:3000")
+
+# Cron Job Secret - used to protect the /api/cron/cleanup/ endpoint
+# Set this in your .env and in Vercel environment variables
+CRON_SECRET = os.environ.get('CRON_SECRET')
