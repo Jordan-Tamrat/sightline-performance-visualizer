@@ -105,24 +105,26 @@ export default function ResultPage() {
       return false;
     };
 
-    // Use a variable to track if we should stop polling
+    // Use variables to track state and interval to ensure synchronous cleanup
     let shouldStop = false;
+    let intervalId: NodeJS.Timeout;
 
     fetchReport().then((finished) => {
       if (finished || shouldStop) return;
 
-      const intervalId = setInterval(async () => {
+      intervalId = setInterval(async () => {
         const finished = await fetchReport();
         if (finished || shouldStop) {
           clearInterval(intervalId);
         }
-      }, 2000);
-
-      return () => {
-        shouldStop = true;
-        clearInterval(intervalId);
-      };
+      }, 5000); // Poll every 5 seconds to reduce backend load
     });
+
+    // React requires cleanup functions to be returned synchronously
+    return () => {
+      shouldStop = true;
+      if (intervalId) clearInterval(intervalId);
+    };
   }, [id, apiUrl]);
 
   useEffect(() => {

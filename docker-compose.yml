@@ -7,9 +7,9 @@ services:
     ports:
       - "8000:8000"
     env_file: .env
-    depends_on:
-      - db
-      - redis
+    depends_on: []
+    dns:
+      - 8.8.8.8
 
   celery_worker:
     build: ./backend
@@ -20,7 +20,8 @@ services:
     shm_size: '2gb'
     depends_on:
       - backend
-      - redis
+    dns:
+      - 8.8.8.8
 
   celery_beat:
     build: ./backend
@@ -30,16 +31,9 @@ services:
     env_file: .env
     depends_on:
       - backend
-      - redis
+    dns:
+      - 8.8.8.8
 
-  db:
-    image: postgres:15-alpine
-    volumes:
-      - postgres_data:/var/lib/postgresql/data
-    env_file: .env
-
-  redis:
-    image: redis:7-alpine
 
   frontend:
     build: ./frontend

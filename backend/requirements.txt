@@ -9,3 +9,5 @@ gunicorn
 django-cors-headers
 requests
 Pillow
+whitenoise
+dj-database-url

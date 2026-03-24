@@ -41,6 +41,7 @@ INSTALLED_APPS = [
 MIDDLEWARE = [
     'corsheaders.middleware.CorsMiddleware', 
     'django.middleware.security.SecurityMiddleware',
+    'whitenoise.middleware.WhiteNoiseMiddleware',
     'django.contrib.sessions.middleware.SessionMiddleware',
     'django.middleware.common.CommonMiddleware',
     'django.middleware.csrf.CsrfViewMiddleware',
@@ -69,18 +70,25 @@ TEMPLATES = [
 WSGI_APPLICATION = 'sightline.wsgi.application'
 
 
+import dj_database_url
+
 # Database
 # https://docs.djangoproject.com/en/6.0/ref/settings/#databases
 
+# Hybrid Solution: Use Session Mode (Port 5432) for Migrations, Transaction Mode (Port 6543) for API
+MIGRATION_MODE = os.environ.get("MIGRATION_MODE", "0") == "1"
+DB_URL = os.environ.get("DIRECT_URL") if MIGRATION_MODE else os.environ.get("DATABASE_URL")
+
 DATABASES = {
-    'default': {
-        'ENGINE': 'django.db.backends.postgresql',
-        'NAME': os.environ.get('DATABASE_NAME'),
-        'USER': os.environ.get('DATABASE_USER'),
-        'PASSWORD': os.environ.get('DATABASE_PASSWORD'),
-        'HOST': os.environ.get('DATABASE_HOST'),
-        'PORT': os.environ.get('DATABASE_PORT'),
-    }
+    'default': dj_database_url.config(
+        default=DB_URL,
+        conn_max_age=0,  # Recommended for serverless/pooled environments
+    )
+}
+
+# Essential for Supabase Transaction Pooler (PgBouncer) compatibility
+DATABASES['default']['OPTIONS'] = {
+    'prepare_threshold': None,
 }
 
 
@@ -118,7 +126,7 @@ USE_TZ = True
 # Static files (CSS, JavaScript, Images)
 # https://docs.djangoproject.com/en/6.0/howto/static-files/
 
-STATIC_URL = 'static/'
+STATIC_URL = '/static/'
 STATIC_ROOT = BASE_DIR / 'staticfiles'
 
 MEDIA_URL = '/media/'
@@ -136,6 +144,13 @@ CELERY_ACCEPT_CONTENT = ['application/json']
 CELERY_TASK_SERIALIZER = 'json'
 CELERY_RESULT_SERIALIZER = 'json'
 CELERY_TIMEZONE = TIME_ZONE
+
+import ssl
+
+# Remote Redis (Upstash/Managed) needs SSL support for 'rediss://'
+if CELERY_BROKER_URL and CELERY_BROKER_URL.startswith('rediss://'):
+    CELERY_BROKER_USE_SSL = {'ssl_cert_reqs': ssl.CERT_NONE}
+    CELERY_REDIS_BACKEND_USE_SSL = {'ssl_cert_reqs': ssl.CERT_NONE}
 
 CELERY_BEAT_SCHEDULE = {
     'cleanup-old-reports-daily': {
