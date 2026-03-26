@@ -127,9 +127,53 @@ USE_TZ = True
 
 STATIC_URL = '/static/'
 STATIC_ROOT = BASE_DIR / 'staticfiles'
+STATICFILES_STORAGE = 'whitenoise.storage.CompressedManifestStaticFilesStorage'
 
+# Media files (Screenshots)
 MEDIA_URL = '/media/'
 MEDIA_ROOT = BASE_DIR / 'media'
+
+# Persistent Storage (S3 / Supabase Storage)
+USE_S3 = os.environ.get('USE_S3', '0') == '1'
+print(f"--- STORAGE CONFIG: USE_S3={USE_S3} ---")
+
+if USE_S3:
+    AWS_ACCESS_KEY_ID = os.environ.get('AWS_ACCESS_KEY_ID')
+    AWS_SECRET_ACCESS_KEY = os.environ.get('AWS_SECRET_ACCESS_KEY')
+    AWS_STORAGE_BUCKET_NAME = os.environ.get('AWS_STORAGE_BUCKET_NAME')
+    AWS_S3_ENDPOINT_URL = os.environ.get('AWS_S3_ENDPOINT_URL')
+    AWS_S3_REGION_NAME = os.environ.get('AWS_S3_REGION_NAME', 'us-east-1')
+    
+    # Modern Django 4.2+ Storages configuration
+    STORAGES = {
+        "default": {
+            "BACKEND": "storages.backends.s3boto3.S3Boto3Storage",
+            "OPTIONS": {
+                "access_key": AWS_ACCESS_KEY_ID,
+                "secret_key": AWS_SECRET_ACCESS_KEY,
+                "bucket_name": AWS_STORAGE_BUCKET_NAME,
+                "endpoint_url": AWS_S3_ENDPOINT_URL,
+                "region_name": AWS_S3_REGION_NAME,
+                "file_overwrite": False,
+                "querystring_auth": True,
+            },
+        },
+        "staticfiles": {
+            "BACKEND": "whitenoise.storage.CompressedManifestStaticFilesStorage",
+        },
+    }
+    # For older versions fallback
+    DEFAULT_FILE_STORAGE = 'storages.backends.s3boto3.S3Boto3Storage'
+else:
+    STORAGES = {
+        "default": {
+            "BACKEND": "django.core.files.storage.FileSystemStorage",
+        },
+        "staticfiles": {
+            "BACKEND": "whitenoise.storage.CompressedManifestStaticFilesStorage",
+        },
+    }
+
 
 # Default primary key field type
 # https://docs.djangoproject.com/en/6.0/ref/settings/#default-auto-field

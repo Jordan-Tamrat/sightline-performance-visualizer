@@ -496,9 +496,8 @@ export default function ResultPage() {
                 report.device_type === 'mobile' ? "max-h-[600px] max-w-sm mx-auto" : ""
               )}>
                 <Image
-                  src={report.screenshot.startsWith('http')
-                    ? report.screenshot.replace(/^https?:\/\/[^/]+/, '')
-                    : report.screenshot}
+                  src={report.screenshot}
+                  unoptimized
                   alt="Full Page Screenshot"
                   width={report.device_type === 'mobile' ? 390 : 1200}
                   height={report.device_type === 'mobile' ? 844 : 800}
