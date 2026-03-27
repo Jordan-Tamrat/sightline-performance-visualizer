@@ -11,25 +11,7 @@ class ReportSerializer(serializers.ModelSerializer):
         # url, device_type, network_type, user_identifier are writable on creation
 
     def get_screenshot(self, obj):
-        # 1. ALWAYS try to extract Base64 directly from JSON first!
-        # This completely bypasses Koyeb's ephemeral filesystem where images disappear on restart.
-        try:
-            if obj.lighthouse_json:
-                final_ss = obj.lighthouse_json.get('audits', {}).get('final-screenshot', {}).get('details', {}).get('data')
-                if final_ss:
-                    return final_ss
-                
-                # fallback trace screenshot
-                trace_events = obj.lighthouse_json.get('trace_screenshots', [])
-                screenshots = [e for e in trace_events if e.get('name') == 'Screenshot']
-                if screenshots:
-                    snapshot = screenshots[-1].get('args', {}).get('snapshot')
-                    if snapshot:
-                        return f"data:image/jpeg;base64,{snapshot}"
-        except Exception:
-            pass
-            
-        # 2. Fallback to existing disk file if present (mostly for local testing or old runs)
+        # Always use the Django storage mechanism (which connects to Supabase S3)
         if obj.screenshot:
             try:
                 request = self.context.get('request')
