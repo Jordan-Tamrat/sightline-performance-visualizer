@@ -13,6 +13,175 @@ from django.db import transaction
 import time
 import socket
 from contextlib import closing
+import gc
+import ijson
+
+def _rss_kb_for_pid(pid: int) -> int | None:
+    """
+    Read VmRSS from /proc/<pid>/status (Linux).
+    Returns RSS in KB, or None if unavailable.
+    """
+    try:
+        with open(f"/proc/{pid}/status", "r", encoding="utf-8") as f:
+            for line in f:
+                if line.startswith("VmRSS:"):
+                    # Example line: "VmRSS:     123456 kB"
+                    return int(line.split()[1])
+    except Exception:
+        return None
+    return None
+
+
+def _cgroup_mem_kb() -> int | None:
+    """
+    Read current container memory usage (cgroup).
+    Works for common Docker setups (cgroup v2 primary).
+    Returns KB, or None if unavailable.
+    """
+    # cgroup v2
+    candidate_paths = [
+        "/sys/fs/cgroup/memory.current",
+        "/sys/fs/cgroup/memory.max_usage_in_bytes",  # sometimes present
+        "/sys/fs/cgroup/memory/memory.current",
+        # cgroup v1 fallbacks
+        "/sys/fs/cgroup/memory.usage_in_bytes",
+        "/sys/fs/cgroup/memory/memory.usage_in_bytes",
+    ]
+
+    for p in candidate_paths:
+        try:
+            if not os.path.exists(p):
+                continue
+            with open(p, "r", encoding="utf-8") as f:
+                raw = f.read().strip()
+            if not raw:
+                continue
+            # Some files may contain 'max'
+            if raw.lower() == "max":
+                continue
+            value_bytes = int(raw)
+            return value_bytes // 1024
+        except Exception:
+            continue
+
+    return None
+
+
+def _log_mem(prefix: str, extra: dict | None = None) -> None:
+    """Lightweight memory logging to diagnose Koyeb OOM kills."""
+    try:
+        pid = os.getpid()
+        rss_kb = _rss_kb_for_pid(pid)
+        cgroup_kb = _cgroup_mem_kb()
+        msg = f"[MEM] {prefix} pid={pid} rss_kb={rss_kb} cgroup_mem_kb={cgroup_kb}"
+        if extra:
+            extras = " ".join([f"{k}={v}" for k, v in extra.items()])
+            msg = f"{msg} {extras}"
+        print(msg, flush=True)
+    except Exception:
+        # Never fail audits due to logging issues.
+        pass
+
+
+def _stream_trace_events(trace_path: str):
+    """Yield trace events from a large trace file without loading the entire JSON."""
+    try:
+        with open(trace_path, 'rb') as trace_fd:
+            for event in ijson.items(trace_fd, 'traceEvents.item'):
+                yield event
+    except FileNotFoundError:
+        return
+
+
+def _determine_trace_start(trace_path: str, lighthouse_data: dict) -> tuple[int | None, dict | None, dict | None, dict | None]:
+    """Stream the trace file to find the earliest calibration events and a sane start timestamp."""
+    first_nav = None
+    first_tracing = None
+    first_fcp = None
+    fcp_event_ts = None
+    first_screenshot_ts = None
+
+    for event in _stream_trace_events(trace_path):
+        name = event.get('name')
+        if name == 'navigationStart' and first_nav is None:
+            first_nav = event
+        elif name == 'TracingStartedInBrowser' and first_tracing is None:
+            first_tracing = event
+        elif name == 'firstContentfulPaint':
+            if first_fcp is None:
+                first_fcp = event
+            if fcp_event_ts is None:
+                fcp_event_ts = event.get('ts')
+        elif name == 'Screenshot' and first_screenshot_ts is None:
+            first_screenshot_ts = event.get('ts')
+
+        if first_nav and first_tracing and first_fcp and first_screenshot_ts is not None:
+            break
+
+    fcp_value_ms = (
+        lighthouse_data.get('audits', {})
+        .get('first-contentful-paint', {})
+        .get('numericValue')
+    )
+
+    start_ts = None
+    if fcp_event_ts and fcp_value_ms is not None:
+        try:
+            start_ts = fcp_event_ts - int(fcp_value_ms * 1000)
+        except Exception:
+            start_ts = None
+    if start_ts is None and first_nav:
+        start_ts = first_nav.get('ts')
+    if start_ts is None and first_tracing:
+        start_ts = first_tracing.get('ts')
+    if start_ts is None and first_screenshot_ts:
+        start_ts = first_screenshot_ts
+
+    return start_ts, first_nav, first_tracing, first_fcp
+
+
+def _collect_deduped_screenshots(trace_path: str, start_ts: float) -> list[dict]:
+    seen_timings: set[int] = set()
+    deduped = []
+
+    for event in _stream_trace_events(trace_path):
+        if event.get('name') != 'Screenshot':
+            continue
+
+        snapshot = event.get('args', {}).get('snapshot')
+        if not snapshot:
+            continue
+
+        ts = event.get('ts', 0) or 0
+        timing_ms = (ts - start_ts) / 1000
+        if timing_ms < 0:
+            timing_ms = 0
+
+        normalized_timing = round(timing_ms / 100) * 100
+        if normalized_timing in seen_timings:
+            continue
+
+        seen_timings.add(normalized_timing)
+        deduped.append(event)
+
+    return deduped
+
+
+def _extract_trace_screenshots(trace_path: str, lighthouse_data: dict) -> list[dict]:
+    start_ts, first_nav, first_tracing, first_fcp = _determine_trace_start(trace_path, lighthouse_data)
+    if start_ts is None:
+        return []
+
+    kept_events = []
+    for event in (first_fcp, first_nav, first_tracing):
+        if event:
+            kept_events.append(event)
+
+    deduped = _collect_deduped_screenshots(trace_path, start_ts)
+    kept_events.extend(deduped)
+
+    print(f"Extracted {len(kept_events)} events from trace (streaming dedupe).")
+    return kept_events
 
 def get_free_port():
     """Finds an available ephemeral port for concurrent Playwright/Lighthouse runs."""
@@ -116,7 +285,9 @@ def run_lighthouse(url, report_id, network_preset, port=9222, chrome_path=None, 
         subprocess.run(
             cmd, 
             check=True, 
-            stdout=subprocess.PIPE, 
+            # Avoid buffering large Lighthouse output in memory.
+            # We primarily rely on output JSON files on disk.
+            stdout=subprocess.DEVNULL, 
             stderr=subprocess.PIPE, 
             env=env,
             timeout=330
@@ -149,34 +320,14 @@ def run_lighthouse(url, report_id, network_preset, port=9222, chrome_path=None, 
     if os.path.exists(trace_path):
         try:
             print(f"Processing trace file: {trace_path}")
-            with open(trace_path, 'r', encoding='utf-8') as f:
-                trace_data = json.load(f)
-                
-            # Extract only Screenshot events to keep DB size manageable
-            # We also need navigationStart to calculate relative timing
-            trace_events = trace_data.get('traceEvents', [])
-            
-            filtered_events = []
-            for event in trace_events:
-                if event.get('name') == 'Screenshot':
-                    filtered_events.append(event)
-                elif event.get('name') == 'navigationStart':
-                    filtered_events.append(event)
-                # Keep TracingStartedInBrowser as a fallback for start time
-                elif event.get('name') == 'TracingStartedInBrowser':
-                    filtered_events.append(event)
-                # Keep firstContentfulPaint for calibration
-                elif event.get('name') == 'firstContentfulPaint':
-                    filtered_events.append(event)
-            
-            print(f"Extracted {len(filtered_events)} events from trace.")
-            
-            # Embed trace screenshots into the main JSON
-            lighthouse_data['trace_screenshots'] = filtered_events
-            
-            # Clean up trace file
-            os.remove(trace_path)
-            
+            trace_screenshots = _extract_trace_screenshots(trace_path, lighthouse_data)
+
+            lighthouse_data['trace_screenshots'] = trace_screenshots
+            del trace_screenshots
+            gc.collect()
+
+            if os.path.exists(trace_path):
+                os.remove(trace_path)
         except Exception as e:
             print(f"Failed to process trace file: {e}")
             # Don't fail the whole audit if trace processing fails
@@ -189,9 +340,33 @@ def run_lighthouse(url, report_id, network_preset, port=9222, chrome_path=None, 
         except:
             pass
     
-    # Clean up main report file
+        # Clean up main report file
     if os.path.exists(lighthouse_report_path):
         os.remove(lighthouse_report_path)
+        
+    # --- PRUNE EXCESS LIGHTHOUSE DATA ---
+    # The Lighthouse JSON contains massive internal audit properties (like entire HTML bodies 
+    # of script tags, extremely long node paths) that we don't use in the UI but take up 
+    # huge amounts of RAM in the DB JSON parser. We drop them to save memory.
+    if 'audits' in lighthouse_data:
+        for audit_key, audit_val in lighthouse_data['audits'].items():
+            if 'details' in audit_val:
+                # Keep items array but shrink strings and drop raw nodes/snippets
+                if 'items' in audit_val['details']:
+                    for item in audit_val['details']['items']:
+                        if 'node' in item:
+                            if 'snippet' in item['node']:
+                                item['node']['snippet'] = '...' # Trim huge HTML snippets
+                
+                # Full page screenshot is totally unnecessary and massive
+                if audit_val.get('id') == 'full-page-screenshot':
+                     audit_val['details'] = {}
+                     
+    if 'i18n' in lighthouse_data:
+        # Drop translation strings
+        lighthouse_data['i18n'] = {}
+        
+    gc.collect()
         
     return lighthouse_data, lighthouse_report_path, timed_out
 
@@ -332,6 +507,11 @@ def run_audit(self, report_id):
 
         print(f"Starting audit for {url} [device={device_type}, network={network_type}]")
 
+        # explicitly release any lingering memory from prior runs
+        gc.collect()
+        
+        _log_mem("audit_start")
+
         # 1. Launch Playwright with Remote Debugging
         screenshot_path = f"/tmp/screenshot_{report_id}.png"
         
@@ -341,12 +521,43 @@ def run_audit(self, report_id):
         # Start Playwright
         p = sync_playwright().start()
         
+        _log_mem("after_playwright_start")
+
         # Launch browser with remote debugging port dynamically assigned
         browser = p.chromium.launch(
             headless=True,
-            args=[f'--remote-debugging-port={debug_port}']
+            # Keep Chrome flags minimal but Docker-friendly to reduce memory overhead.
+            # These should not change your audit output, only stabilize/trim background work.
+            args=[
+                f'--remote-debugging-port={debug_port}',
+                '--disable-gpu',
+                '--disable-dev-shm-usage',
+                '--no-sandbox',
+                '--disable-setuid-sandbox',
+                '--disable-extensions',
+                '--disable-background-networking',
+                # Reduce background work + process/memory overhead in small containers
+                '--disable-background-timer-throttling',
+                '--disable-backgrounding-occluded-windows',
+                '--disable-ipc-flooding-protection',
+                '--disable-renderer-backgrounding',
+                '--no-zygote',
+                '--disable-features=site-per-process',
+                '--renderer-process-limit=1',
+            ],
         )
         
+        # Log memory right after browser launch.
+        # (Playwright's internal process pid may not always be exposed, so we always log container mem.)
+        chrome_extra = None
+        try:
+            chrome_pid = getattr(getattr(browser, "process", None), "pid", None)
+            if chrome_pid:
+                chrome_extra = {"chromium_pid": chrome_pid, "chromium_rss_kb": _rss_kb_for_pid(chrome_pid)}
+        except Exception:
+            chrome_extra = None
+        _log_mem("after_chromium_launch", chrome_extra)
+
         # Save early progress update (browser ready, initializing)
         report.save()
 
@@ -364,117 +575,70 @@ def run_audit(self, report_id):
             device_type=device_type,
         )
         
+        _log_mem("after_lighthouse")
+
         # Update Lighthouse results early to show progress (Step 1 Complete)
         report.lighthouse_json = lighthouse_data
         performance_score = int(lighthouse_data.get('categories', {}).get('performance', {}).get('score', 0) * 100)
         report.performance_score = performance_score
         report.save()
 
-        # 3. Take High-Quality Screenshot with Playwright (STEP 2: Safe to warm up resources now)
-        # Skip this if Lighthouse already timed out (site is likely too slow/unresponsive)
+        # 3. Take Screenshot (Extract from Lighthouse rather than launching Playwright again)
         if not lighthouse_timed_out:
-            print(f"Taking high-res screenshot for {url}...")
-            
-            # Prepare context for screenshot
-            device_config = DEVICE_CONFIGS.get(device_type, DEVICE_CONFIGS['desktop'])
-            context = browser.new_context(
-                viewport=device_config['viewport'],
-                is_mobile=device_config['is_mobile'],
-                has_touch=device_config['has_touch'],
-                device_scale_factor=device_config['device_scale_factor'],
-            )
-            page = context.new_page()
+            print(f"Extracting screenshot from Lighthouse data for {url}...")
             
             try:
-                # Navigate quickly just to get the visual state
-                page.goto(url, timeout=120000, wait_until='networkidle')
-                
-                # Take a high-quality screenshot
-                page.screenshot(path=screenshot_path, full_page=False)
-                
-                # Save screenshot to DB (Step 2 Complete)
-                if os.path.exists(screenshot_path):
-                    with open(screenshot_path, 'rb') as f:
-                        report.screenshot.save(f"screenshot_{report_id}.png", File(f), save=True)
-                    print(f"High-quality screenshot captured and saved for {url}")
-            except Exception as ss_err:
-                print(f"Screenshot capture failed (non-critical): {ss_err}")
-                try:
-                    print(f"Attempting to use Lighthouse fallback screenshot for {url}...")
-                    fallback_b64 = None
-                    
-                    # 1. Try final-screenshot audit from Lighthouse first
-                    final_ss_audit = lighthouse_data.get('audits', {}).get('final-screenshot', {})
-                    if final_ss_audit.get('details') and final_ss_audit['details'].get('data'):
-                        fallback_b64 = final_ss_audit['details']['data']
-                    
-                    # 2. Try last trace screenshot if final-screenshot is not available
-                    if not fallback_b64:
-                        trace_events = lighthouse_data.get('trace_screenshots', [])
-                        screenshots = [e for e in trace_events if e.get('name') == 'Screenshot']
-                        if screenshots:
-                            # Get the last screenshot
-                            snapshot = screenshots[-1].get('args', {}).get('snapshot')
-                            if snapshot:
-                                fallback_b64 = f"data:image/jpeg;base64,{snapshot}"
-                    
-                    if fallback_b64 and fallback_b64.startswith('data:image/'):
-                        import base64
-                        # Extract the base64 part
-                        header, encoded = fallback_b64.split(',', 1)
-                        image_data = base64.b64decode(encoded)
-                        
-                        with open(screenshot_path, 'wb') as f:
-                            f.write(image_data)
-                        
-                        with open(screenshot_path, 'rb') as f:
-                            report.screenshot.save(f"screenshot_{report_id}_fallback.jpg", File(f), save=True)
-                        print(f"Fallback screenshot saved successfully for {url}")
-                    else:
-                        print(f"No fallback screenshot found in Lighthouse data for {url}.")
-                except Exception as fallback_err:
-                    print(f"Fallback screenshot processing also failed: {fallback_err}")
-            finally:
-                try: page.close()
-                except: pass
-                try: context.close()
-                except: pass
-        else:
-            print(f"Skipping Playwright screenshot capture because Lighthouse timed out for {url}. Attempting fallback immediately.")
-            try:
-                # Try fallback immediately from lighthouse_data
                 fallback_b64 = None
+                
+                # 1. Try final-screenshot audit from Lighthouse first
                 final_ss_audit = lighthouse_data.get('audits', {}).get('final-screenshot', {})
                 if final_ss_audit.get('details') and final_ss_audit['details'].get('data'):
                     fallback_b64 = final_ss_audit['details']['data']
                 
+                # 2. Try last trace screenshot if final-screenshot is not available
                 if not fallback_b64:
                     trace_events = lighthouse_data.get('trace_screenshots', [])
                     screenshots = [e for e in trace_events if e.get('name') == 'Screenshot']
                     if screenshots:
+                        # Get the last screenshot
                         snapshot = screenshots[-1].get('args', {}).get('snapshot')
                         if snapshot:
                             fallback_b64 = f"data:image/jpeg;base64,{snapshot}"
                 
+        # Save screenshot to DB
                 if fallback_b64 and fallback_b64.startswith('data:image/'):
                     import base64
+                    # Extract the base64 part
                     header, encoded = fallback_b64.split(',', 1)
                     image_data = base64.b64decode(encoded)
+                    
                     with open(screenshot_path, 'wb') as f:
                         f.write(image_data)
+                        
+                    # Drop big strings from memory before reading back file
+                    del fallback_b64, encoded, image_data, header
+                    gc.collect()
+                    
                     with open(screenshot_path, 'rb') as f:
-                        report.screenshot.save(f"screenshot_{report_id}_fallback_lh.jpg", File(f), save=True)
-                    print(f"Lighthouse-only fallback screenshot saved for {url}")
-            except Exception as lh_fallback_err:
-                print(f"Lighthouse-only fallback screenshot failed: {lh_fallback_err}")
+                        report.screenshot.save(f"screenshot_{report_id}.jpg", File(f), save=True)
+                    print(f"Screenshot saved successfully for {url}")
+                    _log_mem("after_screenshot_fallback")
+                else:
+                    print(f"No screenshot found in Lighthouse data for {url}.")
+            except Exception as ss_err:
+                print(f"Lighthouse screenshot extraction failed: {ss_err}")
 
         # 4. AI Summary (STEP 3)
         report.ai_summary = generate_ai_summary(lighthouse_data, url)
+
+        _log_mem("after_ai_summary")
 
         # 5. Complete Audit
         report.status = 'completed'
         report.ai_summary = report.ai_summary
         report.save()
+
+        _log_mem("audit_completed")
 
         return f"Audit completed for {url}"
 
