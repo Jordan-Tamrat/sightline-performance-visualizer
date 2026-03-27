@@ -607,21 +607,12 @@ def run_audit(self, report_id):
                 
         # Save screenshot to DB
                 if fallback_b64 and fallback_b64.startswith('data:image/'):
-                    import base64
-                    # Extract the base64 part
-                    header, encoded = fallback_b64.split(',', 1)
-                    image_data = base64.b64decode(encoded)
-                    
-                    with open(screenshot_path, 'wb') as f:
-                        f.write(image_data)
-                        
-                    # Drop big strings from memory before reading back file
-                    del fallback_b64, encoded, image_data, header
+                    # We NO LONGER save to the local ephemeral filesystem.
+                    # Koyeb destroys local media on restart, breaking frontend URLs.
+                    # Instead, we just keep it inside the JSON and serve the base64 directly through DRF!
+                    del fallback_b64
                     gc.collect()
-                    
-                    with open(screenshot_path, 'rb') as f:
-                        report.screenshot.save(f"screenshot_{report_id}.jpg", File(f), save=True)
-                    print(f"Screenshot saved successfully for {url}")
+                    print(f"Screenshot kept in JSON to bypass ephemeral storage for {url}")
                     _log_mem("after_screenshot_fallback")
                 else:
                     print(f"No screenshot found in Lighthouse data for {url}.")
