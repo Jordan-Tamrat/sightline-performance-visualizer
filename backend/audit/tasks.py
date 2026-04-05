@@ -4,8 +4,6 @@ from .models import Report, SharedReport
 import subprocess
 import json
 import os
-import google.genai as genai
-from playwright.sync_api import sync_playwright
 from django.core.files import File
 from django.utils import timezone
 from datetime import timedelta
@@ -15,6 +13,7 @@ import socket
 from contextlib import closing
 import gc
 import ijson
+# NOTE: playwright and google.genai are imported lazily inside their respective
 
 def _rss_kb_for_pid(pid: int) -> int | None:
     """
@@ -68,12 +67,14 @@ def _cgroup_mem_kb() -> int | None:
 
 
 def _log_mem(prefix: str, extra: dict | None = None) -> None:
-    """Lightweight memory logging to diagnose Koyeb OOM kills."""
+    """Lightweight memory logging. Reads the worker container's own cgroup memory."""
     try:
         pid = os.getpid()
         rss_kb = _rss_kb_for_pid(pid)
         cgroup_kb = _cgroup_mem_kb()
-        msg = f"[MEM] {prefix} pid={pid} rss_kb={rss_kb} cgroup_mem_kb={cgroup_kb}"
+        # 'worker_cgroup_mem_kb' explicitly labels this as the isolated Celery container's
+        # memory reading — not a combined / shared-container value.
+        msg = f"[MEM] {prefix} pid={pid} rss_kb={rss_kb} worker_cgroup_mem_kb={cgroup_kb}"
         if extra:
             extras = " ".join([f"{k}={v}" for k, v in extra.items()])
             msg = f"{msg} {extras}"
@@ -230,25 +231,33 @@ NETWORK_PRESETS = {
 }
 
 
-def run_lighthouse(url, report_id, network_preset, port=9222, chrome_path=None, device_type='desktop'):
-    """Runs Lighthouse audit attached to an existing Chrome instance."""
+def run_lighthouse(url, report_id, network_preset, chrome_path=None, device_type='desktop'):
+    """Runs Lighthouse audit natively which automatically spawns Chrome."""
     lighthouse_report_path = f"/tmp/report_{report_id}.json"
     
     # Lighthouse CLI flag expects Kilobits per second (Kbps)
     dl_kbps = (network_preset['downloadThroughput'] * 8) // 1024
     ul_kbps = (network_preset['uploadThroughput'] * 8) // 1024
     
+    # Get viewport from DEVICE_CONFIGS or fallback to desktop
+    config = DEVICE_CONFIGS.get(device_type, DEVICE_CONFIGS['desktop'])
+    width = config['viewport']['width']
+    height = config['viewport']['height']
+    
+    # Chrome execution flags to prevent RAM explosions
+    chrome_flags = f"--headless --window-size={width},{height} --disable-gpu --disable-dev-shm-usage --no-sandbox --disable-setuid-sandbox --disable-extensions --disable-background-networking --disable-background-timer-throttling --disable-backgrounding-occluded-windows --disable-ipc-flooding-protection --disable-renderer-backgrounding --no-zygote --disable-features=site-per-process --renderer-process-limit=1 --memory-pressure-off"
+
     # Base command
     cmd = [
         "lighthouse",
         url,
-        f"--port={port}",
         "--output=json",
         f"--output-path={lighthouse_report_path}",
         "--only-categories=performance,accessibility,best-practices,seo",
         "--save-assets",
         "--disable-full-page-screenshot",
         "--max-wait-for-load=300000",
+        f"--chrome-flags={chrome_flags}",
         
         # Enable DevTools throttling and pass custom dynamic parameters
         "--throttling-method=devtools",
@@ -261,7 +270,11 @@ def run_lighthouse(url, report_id, network_preset, port=9222, chrome_path=None, 
     if device_type == 'mobile':
         cmd.extend([
             "--form-factor=mobile",
-            "--throttling.cpuSlowdownMultiplier=4"
+            "--throttling.cpuSlowdownMultiplier=4",
+            "--screenEmulation.mobile=true",
+            f"--screenEmulation.width={width}",
+            f"--screenEmulation.height={height}",
+            "--screenEmulation.deviceScaleFactor=3"
         ])
     else:
         cmd.extend([
@@ -309,9 +322,28 @@ def run_lighthouse(url, report_id, network_preset, port=9222, chrome_path=None, 
                 error_msg += f"\nStdout: {e.stdout.decode()}"
             raise Exception(error_msg)
         
-    # Read the main report
-    with open(lighthouse_report_path, 'r', encoding='utf-8') as f:
-        lighthouse_data = json.load(f)
+    # Read the main report completely streaming to prevent Py/Node memory explosion
+    lighthouse_data = {}
+    allowed_keys = {'categories', 'audits', 'lighthouseVersion', 'requestedUrl', 'finalUrl', 'fetchTime', 'environment', 'runWarnings', 'userAgent'}
+    try:
+        with open(lighthouse_report_path, 'rb') as f:
+            for k, v in ijson.kvitems(f, '', use_float=True):
+                if k in allowed_keys:
+                    # Implement pruning while it's fresh in memory
+                    if k == 'audits':
+                        for audit_key, audit_val in v.items():
+                            if 'details' in audit_val:
+                                if 'items' in audit_val['details']:
+                                    for item in audit_val['details']['items']:
+                                        if 'node' in item and 'snippet' in item['node']:
+                                            item['node']['snippet'] = '...'
+                                if audit_val.get('id') == 'full-page-screenshot':
+                                    audit_val['details'] = {}
+                    lighthouse_data[k] = v
+    except Exception as read_err:
+        print(f"Ijson parsing failed: {read_err}")
+        with open(lighthouse_report_path, 'r', encoding='utf-8') as f:
+            lighthouse_data = json.load(f)
 
     # Locate and process the trace file
     # Lighthouse --save-assets creates report_name-0.trace.json
@@ -344,146 +376,11 @@ def run_lighthouse(url, report_id, network_preset, port=9222, chrome_path=None, 
     if os.path.exists(lighthouse_report_path):
         os.remove(lighthouse_report_path)
         
-    # --- PRUNE EXCESS LIGHTHOUSE DATA ---
-    # The Lighthouse JSON contains massive internal audit properties (like entire HTML bodies 
-    # of script tags, extremely long node paths) that we don't use in the UI but take up 
-    # huge amounts of RAM in the DB JSON parser. We drop them to save memory.
-    if 'audits' in lighthouse_data:
-        for audit_key, audit_val in lighthouse_data['audits'].items():
-            if 'details' in audit_val:
-                # Keep items array but shrink strings and drop raw nodes/snippets
-                if 'items' in audit_val['details']:
-                    for item in audit_val['details']['items']:
-                        if 'node' in item:
-                            if 'snippet' in item['node']:
-                                item['node']['snippet'] = '...' # Trim huge HTML snippets
-                
-                # Full page screenshot is totally unnecessary and massive
-                if audit_val.get('id') == 'full-page-screenshot':
-                     audit_val['details'] = {}
-                     
-    if 'i18n' in lighthouse_data:
-        # Drop translation strings
-        lighthouse_data['i18n'] = {}
-        
     gc.collect()
         
     return lighthouse_data, lighthouse_report_path, timed_out
 
-def generate_ai_summary(lighthouse_data, url):
-    """Generates an AI summary using Gemini."""
-    try:
-        gemini_api_key = settings.GEMINI_API_KEY
-        if not gemini_api_key:
-            return "Gemini API Key not configured."
 
-        client = genai.Client(api_key=gemini_api_key)
-        
-        # Prepare Context - Providing specific Core Metrics for data-driven analysis
-        audits = lighthouse_data.get('audits', {})
-        core_metrics_keys = [
-            'largest-contentful-paint', 
-            'total-blocking-time', 
-            'cumulative-layout-shift', 
-            'first-contentful-paint', 
-            'speed-index',
-            'interactive'
-        ]
-        
-        core_metrics = []
-        for key in core_metrics_keys:
-            audit = audits.get(key)
-            if audit:
-                core_metrics.append({
-                    'id': key,
-                    'title': audit.get('title'),
-                    'score': audit.get('score'),
-                    'value': audit.get('displayValue', audit.get('numericValue')),
-                    'numeric': audit.get('numericValue'),
-                    'description': audit.get('description', '')
-                })
-
-        # Process failed audits (excluding ones already in core_metrics to save tokens)
-        other_failed_findings = []
-        for key, audit in audits.items():
-            if key in core_metrics_keys:
-                continue
-            score = audit.get('score')
-            if score is not None and score < 0.9:
-                display_value = audit.get('displayValue', '')
-                description = audit.get('description', '')
-                other_failed_findings.append(f"- {audit.get('title')} (ID: {key}, Value: {display_value}): {description}")
-
-        core_metrics_json = json.dumps(core_metrics, indent=2)
-        failed_findings_text = "\n".join(other_failed_findings[:10])
-
-        prompt = (
-            f"You are a strict technical Web Performance Analyst.\n\n"
-            f"DATA FOR ANALYSIS:\n"
-            f"URL: {url}\n"
-            f"Core Metrics (WebVitals):\n{core_metrics_json}\n"
-            f"Additional Performance Issues:\n{failed_findings_text if other_failed_findings else 'None'}\n\n"
-            f"THRESHOLD RULES (STRICT):\n"
-            f"- LCP: Good < 2.5s, Needs Improv < 4s, Poor > 4s\n"
-            f"- FCP: Good < 1.8s, Needs Improv < 3s, Poor > 3s\n"
-            f"- SI (Speed Index): Good < 3.4s, Needs Improv < 5.8s, Poor > 5.8s\n"
-            f"- TTI: Good < 3.8s, Needs Improv < 7.3s, Poor > 7.3s\n"
-            f"- TBT: Good < 200ms, Needs Improv < 600ms, Poor > 600ms\n"
-            f"- CLS: Good < 0.1, Needs Improv < 0.25, Poor > 0.25\n\n"
-            f"INSTRUCTIONS:\n"
-            f"1. ANALYZE the 'numeric' values of Core Metrics against the thresholds above. \n"
-            f"2. TONE & PERFECTIONISM: For metrics in the 'Good' range (Low severity), your tone MUST be confirmatory and positive. \n"
-            f"   - DO NOT say it 'needs improvement', is 'far from optimal', or has 'room for improvement'. \n"
-            f"   - DO NOT suggest fixes unless there is a glaring, trivial optimization.\n"
-            f"   - INSTEAD, state that the metric is well-optimized and explain why this value provides a great user experience.\n"
-            f"3. SEVERITY: If a metric is 'Poor', it MUST be 'High' severity. If 'Needs Improvement', mark as 'Medium'. Good = 'Low'.\n"
-            f"4. IMPACT: \n"
-            f"   - For 'Poor'/'Medium': Describe how this value hurts the user.\n"
-            f"   - For 'Good': Explain the positive benefit this value brings to the user (e.g., 'Instant visual feedback', 'Smooth interactions').\n"
-            f"5. SUGGESTION: Only provide technical fixes for 'High' and 'Medium' issues. For 'Low' issues, simply suggest 'Monitor and maintain this performance' or leave blank.\n"
-            f"6. REFERENCES: Always extract and include at least one high-quality documentation link from the 'description' fields provided in the data.\n\n"
-            f"OUTPUT FORMAT (JSON ONLY):\n"
-            f"{{\n"
-            f'  "overall_assessment": "Data-driven summary based on the scores provided.",\n'
-            f'  "issues": [\n'
-            f'    {{\n'
-            f'      "title": "Exact Metric/Issue Name",\n'
-            f'      "explanation": "Technical reason for this specific number.",\n'
-            f'      "impact": "User experience cost (specific to the delta from target).",\n'
-            f'      "suggestion": "How to fix it.",\n'
-            f'      "severity": "High" | "Medium" | "Low",\n'
-            f'      "code_fix": "Optional: Specific code fix.",\n'
-            f'      "references": ["Optional: URL to documentation"],\n'
-            f'      "action": {{ "type": "waterfall" | "metric" | "filmstrip", "target": "Audit ID" }}\n'
-            f'    }}\n'
-            f'  ]\n'
-            f"}}\n"
-            f"Provide RAW JSON only."
-        )
-        
-        response = client.models.generate_content(
-            model='gemini-2.5-flash',
-            contents=prompt,
-        )
-
-        # Robustly extract JSON object between first { and last }
-        text = response.text.strip()
-        start_idx = text.find('{')
-        end_idx = text.rfind('}')
-        if start_idx != -1 and end_idx != -1:
-            text = text[start_idx:end_idx+1]
-        else:
-            raise ValueError("No valid JSON object found in response.")
-            
-        return text
-    except Exception as e:
-        print(f"AI Summary failed: {e}")
-        # Return a fallback JSON structure for UI consistency
-        fallback = {
-            "overall_assessment": f"AI Summary unavailable due to error: {str(e)}",
-            "issues": []
-        }
-        return json.dumps(fallback)
 
 @shared_task(bind=True, max_retries=0, default_retry_delay=30)
 def run_audit(self, report_id):
@@ -491,11 +388,16 @@ def run_audit(self, report_id):
     # This conflicts with Django's synchronous database safety checks.
     # We set this environment variable to allow DB operations within this context.
     os.environ["DJANGO_ALLOW_ASYNC_UNSAFE"] = "true"
+    
+    import glob
+    chrome_path = None
+    matches = glob.glob('/root/.cache/ms-playwright/chromium-*/chrome-linux64/chrome')
+    if matches:
+        chrome_path = matches[0]
+
     url = None
     screenshot_path = None
     lighthouse_report_path = None
-    browser = None
-    p = None
     
     try:
         report = Report.objects.get(id=report_id)
@@ -512,66 +414,16 @@ def run_audit(self, report_id):
         
         _log_mem("audit_start")
 
-        # 1. Launch Playwright with Remote Debugging
+        # 1. Run Lighthouse directly (Spawns Chrome internally)
         screenshot_path = f"/tmp/screenshot_{report_id}.png"
-        
-        # Get dynamic port for concurrent audits
-        debug_port = get_free_port()
-        
-        # Start Playwright
-        p = sync_playwright().start()
-        
-        _log_mem("after_playwright_start")
-
-        # Launch browser with remote debugging port dynamically assigned
-        browser = p.chromium.launch(
-            headless=True,
-            # Keep Chrome flags minimal but Docker-friendly to reduce memory overhead.
-            # These should not change your audit output, only stabilize/trim background work.
-            args=[
-                f'--remote-debugging-port={debug_port}',
-                '--disable-gpu',
-                '--disable-dev-shm-usage',
-                '--no-sandbox',
-                '--disable-setuid-sandbox',
-                '--disable-extensions',
-                '--disable-background-networking',
-                # Reduce background work + process/memory overhead in small containers
-                '--disable-background-timer-throttling',
-                '--disable-backgrounding-occluded-windows',
-                '--disable-ipc-flooding-protection',
-                '--disable-renderer-backgrounding',
-                '--no-zygote',
-                '--disable-features=site-per-process',
-                '--renderer-process-limit=1',
-            ],
-        )
-        
-        # Log memory right after browser launch.
-        # (Playwright's internal process pid may not always be exposed, so we always log container mem.)
-        chrome_extra = None
-        try:
-            chrome_pid = getattr(getattr(browser, "process", None), "pid", None)
-            if chrome_pid:
-                chrome_extra = {"chromium_pid": chrome_pid, "chromium_rss_kb": _rss_kb_for_pid(chrome_pid)}
-        except Exception:
-            chrome_extra = None
-        _log_mem("after_chromium_launch", chrome_extra)
-
-        # Save early progress update (browser ready, initializing)
-        report.save()
-
-        # 2. Run Lighthouse FIRST (STEP 1: Ensures 100% untouched browser state for pure benchmark)
         network_preset = NETWORK_PRESETS.get(network_type, NETWORK_PRESETS['4g'])
-        executable_path = p.chromium.executable_path
-        print(f"Running Lighthouse on port {debug_port} (Binary: {executable_path}) for {url}...")
+        print(f"Running Lighthouse (Binary: {chrome_path}) for {url}...")
         
         lighthouse_data, lighthouse_report_path, lighthouse_timed_out = run_lighthouse(
             url, 
             report_id, 
             network_preset=network_preset,
-            port=debug_port, 
-            chrome_path=executable_path,
+            chrome_path=chrome_path,
             device_type=device_type,
         )
         
@@ -579,7 +431,10 @@ def run_audit(self, report_id):
 
         # Update Lighthouse results early to show progress (Step 1 Complete)
         report.lighthouse_json = lighthouse_data
-        performance_score = int(lighthouse_data.get('categories', {}).get('performance', {}).get('score', 0) * 100)
+        raw_score = lighthouse_data.get('categories', {}).get('performance', {}).get('score')
+        # Guard: Lighthouse can return None for score on error/timeout pages.
+        # Treat None as 0 to prevent a NoneType * int crash on the next line.
+        performance_score = int((raw_score or 0) * 100)
         report.performance_score = performance_score
         report.save()
 
@@ -628,14 +483,10 @@ def run_audit(self, report_id):
             except Exception as ss_err:
                 print(f"Lighthouse screenshot extraction failed: {ss_err}")
 
-        # 4. AI Summary (STEP 3)
-        report.ai_summary = generate_ai_summary(lighthouse_data, url)
-
-        _log_mem("after_ai_summary")
-
-        # 5. Complete Audit
-        report.status = 'completed'
-        report.ai_summary = report.ai_summary
+        # 4. Complete Audit
+        # (AI Summary is now intentionally deferred and executed in the Django web
+        # dyno when the frontend polls, freeing up maximum memory on this worker)
+        # Leaving status as 'processing' so the frontend pauses correctly on the AI loading step!
         report.save()
 
         _log_mem("audit_completed")
@@ -645,44 +496,28 @@ def run_audit(self, report_id):
     except Exception as e:
         print(f"Error auditing report_id={report_id}: {e}")
         
-        # Determine if we should retry
+        # Always mark the report as failed immediately so:
+        # 1. The frontend stops polling (it checks status=='failed')
+        # 2. The user sees the error message rather than an infinite loading spinner
         is_timeout = "timed out" in str(e).lower() or isinstance(e, subprocess.TimeoutExpired)
-        
-        # Don't retry on timeouts (they often happen repeatedly on slow sites)
-        if is_timeout:
-             report.status = 'failed'
-             report.ai_summary = f"Audit timed out after search limit. The site is likely too slow or unresponsive to benchmark reliably."
-             report.save()
-             return f"Audit timed out for report_id={report_id}"
-
-        # Retry logic if within retry limits (for other errors)
+        error_msg = (
+            "Audit timed out. The site is likely too slow or unresponsive to benchmark reliably."
+            if is_timeout
+            else f"Audit error: {str(e)}"
+        )
         try:
-            # Re-raise to let Celery handle retry
-            raise self.retry(exc=e)
-        except self.MaxRetriesExceededError:
-            # Final failure after all retries
-            if 'report' in locals():
-                try:
-                    report.status = 'failed'
-                    report.ai_summary = f"Error: {str(e)}"
-                    report.save()
-                except Exception as db_err:
-                     print(f"Failed to save error state to DB: {db_err}")
-            return f"Audit failed for report_id={report_id}: {e}"
-        except Exception:
-            # This handles cases where retry didn't throw MaxRetriesExceededError
-            # but we still want to ensure cleanup happens below
-            pass
+            # 'report' may not be defined if the DB fetch itself failed
+            if 'report' in locals() and report is not None:
+                report.status = 'failed'
+                report.ai_summary = error_msg
+                report.save()
+        except Exception as db_err:
+            print(f"Failed to save failure state to DB: {db_err}")
+        
+        return f"Audit failed for report_id={report_id}: {e}"
 
     finally:
-        # ABSOLUTE CLEANUP - Always close browser and remove temp files
-        if browser:
-            try: browser.close()
-            except: pass
-        if p:
-            try: p.stop()
-            except: pass
-        
+        # ABSOLUTE CLEANUP - Always remove temp files protecting dyno disk
         if screenshot_path and os.path.exists(screenshot_path):
             try: os.remove(screenshot_path)
             except: pass

@@ -2,15 +2,53 @@ from rest_framework import viewsets, throttling
 from rest_framework.decorators import action
 from rest_framework.response import Response
 from rest_framework.views import APIView
+from rest_framework.exceptions import ValidationError
 from django.shortcuts import get_object_or_404
 from django.utils import timezone
 from datetime import timedelta
 from django.conf import settings
 from django.http import JsonResponse
 from django.views import View
+import requests
+import os
 from .models import Report, SharedReport
 from .serializers import ReportSerializer, SharedReportSerializer
 from .tasks import run_audit, cleanup_old_reports, cleanup_expired_shares
+from .ai import generate_ai_summary
+import threading
+
+_ACTIVE_AI_GEN = set()
+
+def _cgroup_mem_kb() -> int:
+    try:
+        with open('/sys/fs/cgroup/memory.current', 'r') as f:
+            return int(f.read().strip()) // 1024
+    except Exception:
+        # Fallback for old cgroup v1 or missing cgroups
+        try:
+            with open('/sys/fs/cgroup/memory/memory.usage_in_bytes', 'r') as f:
+                return int(f.read().strip()) // 1024
+        except Exception:
+            return 0
+
+def _rss_kb_for_pid(pid: int) -> int:
+    try:
+        with open(f"/proc/{pid}/status", "r") as f:
+            for line in f:
+                if line.startswith("VmRSS:"):
+                    return int(line.split()[1])
+    except Exception:
+        pass
+    return 0
+
+def _log_mem(prefix: str) -> None:
+    try:
+        pid = os.getpid()
+        rss_kb = _rss_kb_for_pid(pid)
+        cgroup_kb = _cgroup_mem_kb()
+        print(f"[MEM] {prefix} pid={pid} rss_kb={rss_kb} web_cgroup_mem_kb={cgroup_kb}", flush=True)
+    except Exception:
+        pass
 
 class ReportViewSet(viewsets.ModelViewSet):
     queryset = Report.objects.all().order_by('-created_at')
@@ -23,8 +61,63 @@ class ReportViewSet(viewsets.ModelViewSet):
         return []
 
     def perform_create(self, serializer):
-        report = serializer.save()
+        url = serializer.validated_data.get('url')
+        if url:
+            _log_mem("web_cgroup_mem__before_url_check")
+            try:
+                # Fast pre-flight check to save Celery dyno from spinning up browsers for dead links
+                response = requests.head(url, timeout=5, allow_redirects=True)
+                response.raise_for_status()
+            except requests.RequestException:
+                try:
+                    # Fallback to GET just in case the server rejects HEAD requests
+                    response = requests.get(url, timeout=5, allow_redirects=True, stream=True)
+                    response.raise_for_status()
+                    response.close()
+                except requests.RequestException:
+                    raise ValidationError({'url': 'URL is unreachable or invalid.'})
+            _log_mem("web_cgroup_mem__after_url_check")
+            
+        report = serializer.save(status='processing')
+        _log_mem("web_cgroup_mem__before_audit_queued")
         run_audit.delay(report.id)
+
+    def retrieve(self, request, *args, **kwargs):
+        instance = self.get_object()
+        
+        # Intercept here to run AI dynamically in Web Dyno if Celery finished the Lighthouse audit
+        if instance.status == 'processing' and not instance.ai_summary and instance.lighthouse_json:
+            if instance.id not in _ACTIVE_AI_GEN:
+                _ACTIVE_AI_GEN.add(instance.id)
+                _log_mem("web_cgroup_mem__before_ai_gen_thread")
+                
+                def _run_ai_bg(report_id):
+                    from .models import Report
+                    from django.db import connection
+                    try:
+                        r = Report.objects.get(id=report_id)
+                        res = generate_ai_summary(r.lighthouse_json, r.url)
+                        r.ai_summary = res
+                        r.status = 'completed'
+                        r.save(update_fields=['ai_summary', 'status'])
+                    except Exception as e:
+                        print(f"Web AI generating thread failed: {e}")
+                        try:
+                            r = Report.objects.get(id=report_id)
+                            r.ai_summary = "AI Summary generation failed."
+                            r.status = 'completed'
+                            r.save(update_fields=['ai_summary', 'status'])
+                        except:
+                            pass
+                    finally:
+                        _ACTIVE_AI_GEN.discard(report_id)
+                        connection.close()
+
+                threading.Thread(target=_run_ai_bg, args=(instance.id,)).start()
+            
+        serializer = self.get_serializer(instance)
+        return Response(serializer.data)
+
 
     @action(detail=True, methods=['post'])
     def share(self, request, pk=None):

@@ -1,12 +1,23 @@
 services:
   backend:
     build: ./backend
-    command: sh -c "python manage.py migrate --noinput && celery -A sightline worker --loglevel=info --concurrency=1 & python manage.py runserver 0.0.0.0:8000"
+    command: sh -c "python manage.py migrate --noinput && python manage.py runserver 0.0.0.0:8000"
     volumes:
       - ./backend:/app
     ports:
       - "8000:8000"
     env_file: .env
+    dns:
+      - 8.8.8.8
+
+  celery_worker:
+    build: ./backend
+    command: celery -A sightline worker --loglevel=info --concurrency=1 -O fair --without-gossip --without-mingle --without-heartbeat
+    volumes:
+      - ./backend:/app
+    env_file: .env
+    depends_on:
+      - backend
     dns:
       - 8.8.8.8
 
