@@ -389,11 +389,19 @@ def run_audit(self, report_id):
     # We set this environment variable to allow DB operations within this context.
     os.environ["DJANGO_ALLOW_ASYNC_UNSAFE"] = "true"
     
-    import glob
-    chrome_path = None
-    matches = glob.glob('/root/.cache/ms-playwright/chromium-*/chrome-linux64/chrome')
-    if matches:
-        chrome_path = matches[0]
+    import glob, shutil
+    chrome_path = (
+        os.environ.get("GOOGLE_CHROME_BIN") or 
+        os.environ.get("CHROME_PATH") or 
+        shutil.which("google-chrome") or 
+        shutil.which("chrome")
+    )
+
+    if not chrome_path:
+        # Fallback to Playwright path if still in local/docker dev
+        matches = glob.glob('/root/.cache/ms-playwright/chromium-*/chrome-linux64/chrome')
+        if matches:
+            chrome_path = matches[0]
 
     url = None
     screenshot_path = None
