@@ -1,0 +1,11 @@
+{
+  "name": "sightline-root",
+  "version": "1.0.0",
+  "description": "Root manifest for Heroku Lighthouse and Next.js detection",
+  "dependencies": {
+    "lighthouse": "^12.0.0"
+  },
+  "engines": {
+    "node": ">=18.x"
+  }
+}
