@@ -3,7 +3,6 @@ djangorestframework
 celery
 redis
 psycopg2-binary
-psycopg2-binary
 google-genai
 gunicorn
 django-cors-headers
