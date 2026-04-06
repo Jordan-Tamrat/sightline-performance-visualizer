@@ -65,13 +65,17 @@ class ReportViewSet(viewsets.ModelViewSet):
         if url:
             _log_mem("web_cgroup_mem__before_url_check")
             try:
+                # Use a realistic User-Agent to bypass simple bot protection/WAFs
+                headers = {
+                    'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36'
+                }
                 # Fast pre-flight check to save Celery dyno from spinning up browsers for dead links
-                response = requests.head(url, timeout=5, allow_redirects=True)
+                response = requests.head(url, timeout=5, allow_redirects=True, headers=headers)
                 response.raise_for_status()
             except requests.RequestException:
                 try:
                     # Fallback to GET just in case the server rejects HEAD requests
-                    response = requests.get(url, timeout=5, allow_redirects=True, stream=True)
+                    response = requests.get(url, timeout=5, allow_redirects=True, stream=True, headers=headers)
                     response.raise_for_status()
                     response.close()
                 except requests.RequestException:
