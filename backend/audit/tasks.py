@@ -394,7 +394,8 @@ def run_audit(self, report_id):
         os.environ.get("GOOGLE_CHROME_BIN") or 
         os.environ.get("CHROME_PATH") or 
         shutil.which("google-chrome") or 
-        shutil.which("chrome")
+        shutil.which("chrome") or
+        shutil.which("chromium")
     )
 
     if not chrome_path:

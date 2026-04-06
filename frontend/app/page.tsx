@@ -23,8 +23,21 @@ function RadarCursor() {
   const [rings, setRings] = useState<{ id: number; x: number; y: number }[]>([]);
   const [isHovering, setIsHovering] = useState(false);
   const ringId = useRef(0);
+  const [isMobile, setIsMobile] = useState(true);
 
   useEffect(() => {
+    const mql = window.matchMedia('(pointer: coarse)');
+    const checkMobile = () => {
+      setIsMobile(mql.matches || window.innerWidth < 1024);
+    };
+    
+    checkMobile();
+    window.addEventListener('resize', checkMobile);
+
+    if (mql.matches || window.innerWidth < 1024) {
+      return () => window.removeEventListener('resize', checkMobile);
+    }
+
     const onMove = (e: MouseEvent) => {
       setPos({ x: e.clientX, y: e.clientY });
       const el = document.elementFromPoint(e.clientX, e.clientY);
@@ -37,13 +50,17 @@ function RadarCursor() {
       setRings(r => [...r, { id, x: e.clientX, y: e.clientY }]);
       setTimeout(() => setRings(r => r.filter(ring => ring.id !== id)), 900);
     };
+
     window.addEventListener('mousemove', onMove);
     window.addEventListener('click', onClick);
     return () => {
+      window.removeEventListener('resize', checkMobile);
       window.removeEventListener('mousemove', onMove);
       window.removeEventListener('click', onClick);
     };
   }, []);
+
+  if (isMobile) return null;
 
   return (
     <>
@@ -147,7 +164,7 @@ const features = [
   {
     icon: Zap,
     title: 'Lighthouse Audit',
-    desc: 'Full Lighthouse v12 audit powered by Playwright. Performance, Accessibility, Best Practices, and SEO scores in one click.',
+    desc: 'Full Lighthouse v12 audit. Performance, Accessibility, Best Practices, and SEO scores in one click.',
     color: 'blue',
   },
   {
@@ -171,7 +188,7 @@ const features = [
   {
     icon: PlayCircle,
     title: 'Visual Filmstrip',
-    desc: 'Frame-by-frame loading timeline. See exactly how your page renders as screenshots captured during a live Playwright run.',
+    desc: 'Frame-by-frame loading timeline. See exactly how your page renders with screenshots captured during a live audit.',
     color: 'pink',
   },
   {
@@ -764,7 +781,7 @@ export default function Home() {
               <div className="flex flex-col items-center gap-6">
                 <p className="text-sm font-bold text-zinc-300">Page Load Filmstrip</p>
                 <FilmstripMockup />
-                <p className="text-xs text-zinc-500">Screenshots captured at 0.5s intervals during Playwright run</p>
+                <p className="text-xs text-zinc-500">Screenshots captured at 0.5s intervals during Lighthouse audit</p>
               </div>
             )}
             {activePreview === 'insights' && (
@@ -829,7 +846,7 @@ export default function Home() {
         <div className="flex items-center justify-center gap-2 mb-2">
           <span className="font-bold text-zinc-600 dark:text-zinc-300 uppercase tracking-widest">Sightline</span>
         </div>
-        Powered by Lighthouse v12, Playwright &amp; Gemini AI
+        Powered by Lighthouse v12, Chrome &amp; Gemini AI
       </footer>
     </div>
   );
