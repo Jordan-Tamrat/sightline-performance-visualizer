@@ -1,9 +1,12 @@
 'use client';
 
-import React, { useMemo } from 'react';
+import React, { useMemo, useState } from 'react';
 import { motion } from 'framer-motion';
-import { Sparkles, LayoutPanelTop, Info } from 'lucide-react';
+import { Sparkles, LayoutPanelTop, Info, CheckCircle } from 'lucide-react';
+import clsx from 'clsx';
 import InsightCard, { Insight, InsightAction } from './InsightCard';
+
+type SeverityFilter = 'All' | 'High' | 'Medium' | 'Low';
 
 interface AIInsightsPanelProps {
   aiSummary: string | null;
@@ -11,6 +14,8 @@ interface AIInsightsPanelProps {
 }
 
 export default function AIInsightsPanel({ aiSummary, onAction }: AIInsightsPanelProps) {
+  const [filter, setFilter] = useState<SeverityFilter>('All');
+
   const parsedData = useMemo(() => {
     if (!aiSummary) return null;
     try {
@@ -36,6 +41,19 @@ export default function AIInsightsPanel({ aiSummary, onAction }: AIInsightsPanel
       return aOrder - bOrder;
     });
   }, [parsedData]);
+
+  const counts = useMemo(() => {
+    const c: Record<SeverityFilter, number> = { All: sortedIssues.length, High: 0, Medium: 0, Low: 0 };
+    sortedIssues.forEach((i: Insight) => {
+      if (i.severity === 'High' || i.severity === 'Medium' || i.severity === 'Low') c[i.severity]++;
+    });
+    return c;
+  }, [sortedIssues]);
+
+  const filteredIssues = useMemo(() => {
+    if (filter === 'All') return sortedIssues;
+    return sortedIssues.filter((i: Insight) => i.severity === filter);
+  }, [sortedIssues, filter]);
 
   if (!parsedData) {
     return (
@@ -83,29 +101,57 @@ export default function AIInsightsPanel({ aiSummary, onAction }: AIInsightsPanel
 
       {/* Issues Grid/List */}
       <div className="space-y-6">
-        <div className="flex items-center justify-between px-2">
+        <div className="flex flex-wrap items-center justify-between gap-4 px-2">
           <div className="flex items-center gap-3">
              <LayoutPanelTop className="w-5 h-5 text-zinc-400" />
              <h4 className="text-xs font-black text-zinc-400 uppercase tracking-widest">Key Insights ({sortedIssues.length})</h4>
           </div>
-          <p className="text-[10px] text-zinc-400 font-medium">Click to expand details</p>
+
+          <div className="flex items-center gap-1 bg-zinc-100 dark:bg-zinc-900/50 p-1 border border-zinc-200 dark:border-zinc-800 rounded-full">
+            {(['All', 'High', 'Medium', 'Low'] as SeverityFilter[]).map((sev) => (
+              <button
+                key={sev}
+                onClick={() => setFilter(sev)}
+                disabled={counts[sev] === 0}
+                className={clsx(
+                  "flex items-center gap-1.5 px-3 py-1.5 text-[10px] font-black uppercase rounded-full transition-all cursor-pointer disabled:opacity-30 disabled:cursor-not-allowed",
+                  filter === sev
+                    ? sev === 'High' ? "bg-red-500 text-white shadow-sm"
+                      : sev === 'Medium' ? "bg-amber-500 text-white shadow-sm"
+                      : sev === 'Low' ? "bg-emerald-500 text-white shadow-sm"
+                      : "bg-zinc-900 dark:bg-white text-white dark:text-zinc-900 shadow-sm"
+                    : "text-zinc-500 hover:text-zinc-800 dark:hover:text-zinc-200"
+                )}
+              >
+                {sev} <span className="opacity-70">{counts[sev]}</span>
+              </button>
+            ))}
+          </div>
         </div>
 
-        <motion.div 
-          variants={containerVariants}
-          initial="hidden"
-          animate="show"
-          className="grid gap-5"
-        >
-          {sortedIssues.map((insight: Insight, idx: number) => (
-            <InsightCard 
-              key={idx} 
-              insight={insight} 
-              onAction={onAction}
-              index={idx}
-            />
-          ))}
-        </motion.div>
+        {filteredIssues.length === 0 ? (
+          <div className="flex flex-col items-center justify-center py-16 text-zinc-500 bg-zinc-50 dark:bg-zinc-900/30 border border-zinc-200 dark:border-zinc-800 rounded-2xl border-dashed">
+            <CheckCircle className="w-6 h-6 mb-2 text-emerald-500" />
+            <p className="text-sm font-medium">No {filter.toLowerCase()} severity issues found.</p>
+          </div>
+        ) : (
+          <motion.div
+            key={filter}
+            variants={containerVariants}
+            initial="hidden"
+            animate="show"
+            className="grid gap-5"
+          >
+            {filteredIssues.map((insight: Insight, idx: number) => (
+              <InsightCard
+                key={`${filter}-${idx}`}
+                insight={insight}
+                onAction={onAction}
+                index={idx}
+              />
+            ))}
+          </motion.div>
+        )}
       </div>
     </div>
   );

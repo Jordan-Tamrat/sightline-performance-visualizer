@@ -2,7 +2,8 @@
 
 import Link from 'next/link';
 import { usePathname } from 'next/navigation';
-import { LayoutDashboard, History } from 'lucide-react';
+import { LayoutDashboard, History, Eye, X } from 'lucide-react';
+import { motion } from 'framer-motion';
 import clsx from 'clsx';
 import ThemeToggle from './ThemeToggle';
 
@@ -37,33 +38,46 @@ export default function Sidebar({ isOpen, onClose }: SidebarProps) {
                 <div className="p-6">
                     <div className="flex items-center justify-between mb-8">
                         <Link href="/" className="group flex items-center gap-2">
-                            <h1 className="text-2xl font-bold tracking-tight bg-gradient-to-r from-blue-400 to-emerald-400 text-transparent bg-clip-text cursor-pointer hover:opacity-80 transition-opacity">
+                            <Eye className="w-5 h-5 text-blue-500 group-hover:scale-110 transition-transform" />
+                            <h1 className="text-2xl font-bold tracking-tight bg-gradient-to-r from-blue-400 to-emerald-400 text-transparent bg-clip-text cursor-pointer group-hover:opacity-80 transition-opacity">
                                 Sightline
                             </h1>
                         </Link>
-                        <button 
+                        <button
                             onClick={onClose}
                             className="p-2 md:hidden hover:bg-zinc-100 dark:hover:bg-zinc-800 rounded-lg text-zinc-500 transition-colors"
                         >
-                            ✕
+                            <X className="w-5 h-5" />
                         </button>
                     </div>
                 <nav className="space-y-2">
-                    {links.map((link) => (
-                        <Link
-                            key={link.href}
-                            href={link.href}
-                            className={clsx(
-                                "flex items-center gap-3 px-4 py-3 rounded-lg font-medium transition-colors",
-                                pathname === link.href || (pathname.startsWith('/results') && link.label === 'Dashboard')
-                                    ? "bg-blue-50 dark:bg-blue-500/10 text-blue-600 dark:text-blue-400"
-                                    : "text-zinc-600 dark:text-zinc-400 hover:bg-zinc-100 dark:hover:bg-zinc-800/50 hover:text-zinc-900 dark:hover:text-zinc-200"
-                            )}
-                        >
-                            {link.icon}
-                            {link.label}
-                        </Link>
-                    ))}
+                    {links.map((link) => {
+                        const isActive = pathname === link.href || (pathname.startsWith('/results') && link.label === 'Dashboard');
+                        return (
+                            <Link
+                                key={link.href}
+                                href={link.href}
+                                className={clsx(
+                                    "relative flex items-center gap-3 px-4 py-3 rounded-lg font-medium transition-colors overflow-hidden",
+                                    isActive
+                                        ? "text-blue-600 dark:text-blue-400"
+                                        : "text-zinc-600 dark:text-zinc-400 hover:bg-zinc-100 dark:hover:bg-zinc-800/50 hover:text-zinc-900 dark:hover:text-zinc-200"
+                                )}
+                            >
+                                {isActive && (
+                                    <motion.div
+                                        layoutId="sidebar-active-pill"
+                                        className="absolute inset-0 bg-blue-50 dark:bg-blue-500/10 rounded-lg"
+                                        transition={{ type: 'spring', stiffness: 400, damping: 35 }}
+                                    />
+                                )}
+                                <span className="relative z-10 flex items-center gap-3">
+                                    {link.icon}
+                                    {link.label}
+                                </span>
+                            </Link>
+                        );
+                    })}
                 </nav>
             </div>
             <div className="mt-auto p-6 border-t border-zinc-200 dark:border-zinc-800">

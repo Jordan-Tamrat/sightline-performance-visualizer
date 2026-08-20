@@ -182,19 +182,44 @@ export default function WebVitalsGrid({ audits }: WebVitalsGridProps) {
                             initial={{ opacity: 0, scale: 0.95 }}
                             animate={{ opacity: 1, scale: 1 }}
                             transition={{ duration: 0.4, delay: 0.2 + (index * 0.1) }}
-                            className="bg-white dark:bg-zinc-900/40 border border-zinc-200 dark:border-zinc-800 rounded-xl p-5 hover:border-zinc-300 dark:hover:border-zinc-700 transition-colors shadow-sm relative overflow-hidden group"
+                            whileHover={{ y: -5, scale: 1.015 }}
+                            className={clsx(
+                                "bg-white dark:bg-zinc-900/40 border border-zinc-200 dark:border-zinc-800 rounded-xl p-5 transition-all duration-300 shadow-sm hover:shadow-xl relative overflow-hidden group cursor-default",
+                                severity === 'good' && "hover:border-emerald-400/50 hover:shadow-emerald-500/10",
+                                severity === 'needs-improvement' && "hover:border-amber-400/50 hover:shadow-amber-500/10",
+                                severity === 'poor' && "hover:border-red-400/50 hover:shadow-red-500/10",
+                            )}
                         >
                             {/* Top Accent Line */}
+                            <motion.div
+                                initial={{ scaleX: 0 }}
+                                animate={{ scaleX: 1 }}
+                                transition={{ duration: 0.6, delay: 0.3 + (index * 0.1) }}
+                                style={{ transformOrigin: 'left' }}
+                                className={clsx(
+                                    "absolute top-0 left-0 right-0 h-1",
+                                    severity === 'good' && "bg-emerald-500",
+                                    severity === 'needs-improvement' && "bg-amber-500",
+                                    severity === 'poor' && "bg-red-500",
+                                )}
+                            />
+
+                            {/* Soft background glow on hover */}
                             <div className={clsx(
-                                "absolute top-0 left-0 right-0 h-1",
-                                severity === 'good' && "bg-emerald-500",
-                                severity === 'needs-improvement' && "bg-amber-500",
-                                severity === 'poor' && "bg-red-500",
+                                "absolute -top-10 -right-10 w-32 h-32 rounded-full blur-3xl opacity-0 group-hover:opacity-100 transition-opacity duration-500 pointer-events-none",
+                                severity === 'good' && "bg-emerald-500/10",
+                                severity === 'needs-improvement' && "bg-amber-500/10",
+                                severity === 'poor' && "bg-red-500/10",
                             )} />
 
-                            <div className="flex items-center justify-between mb-4 mt-1">
+                            <div className="flex items-center justify-between mb-4 mt-1 relative">
                                 <div className="flex items-center gap-2">
-                                    <div className="bg-zinc-100 dark:bg-zinc-800 p-2 rounded-lg text-zinc-600 dark:text-zinc-400">
+                                    <div className={clsx(
+                                        "p-2 rounded-lg transition-transform duration-300 group-hover:scale-110 group-hover:rotate-3",
+                                        severity === 'good' && "bg-emerald-500/10 text-emerald-600 dark:text-emerald-400",
+                                        severity === 'needs-improvement' && "bg-amber-500/10 text-amber-600 dark:text-amber-400",
+                                        severity === 'poor' && "bg-red-500/10 text-red-600 dark:text-red-400",
+                                    )}>
                                         <Icon className="w-4 h-4" />
                                     </div>
                                     <div>
@@ -205,11 +230,11 @@ export default function WebVitalsGrid({ audits }: WebVitalsGridProps) {
                                 {severity === 'good' ? (
                                     <CheckCircle className="w-5 h-5 text-emerald-500" />
                                 ) : (
-                                    <AlertCircle className={clsx("w-5 h-5", severity === 'poor' ? "text-red-500" : "text-amber-500")} />
+                                    <AlertCircle className={clsx("w-5 h-5", severity === 'poor' ? "text-red-500 animate-pulse" : "text-amber-500")} />
                                 )}
                             </div>
 
-                            <div className="mb-2">
+                            <div className="mb-3 relative">
                                 <span className={clsx(
                                     "text-2xl font-bold tracking-tight",
                                     severity === 'good' && "text-emerald-600 dark:text-emerald-400",
@@ -220,18 +245,24 @@ export default function WebVitalsGrid({ audits }: WebVitalsGridProps) {
                                 </span>
                             </div>
 
-                            <div className="text-sm text-zinc-500 dark:text-zinc-400 h-10 line-clamp-2">
+                            <div className="text-sm text-zinc-500 dark:text-zinc-400 h-10 line-clamp-2 relative">
                                 {vital.description}
                             </div>
 
                             {/* Status Badge */}
-                            <div className="mt-4 flex">
+                            <div className="mt-4 flex relative">
                                 <span className={clsx(
-                                    "text-[10px] font-bold uppercase tracking-wider px-2 py-1 rounded",
-                                    severity === 'good' && "bg-emerald-100 text-emerald-800 dark:bg-emerald-500/10 dark:text-emerald-400",
-                                    severity === 'needs-improvement' && "bg-amber-100 text-amber-800 dark:bg-amber-500/10 dark:text-amber-400",
-                                    severity === 'poor' && "bg-red-100 text-red-800 dark:bg-red-500/10 dark:text-red-400",
+                                    "flex items-center gap-1.5 text-[10px] font-bold uppercase tracking-wider px-2.5 py-1 rounded-full border",
+                                    severity === 'good' && "bg-emerald-100 text-emerald-800 border-emerald-200 dark:bg-emerald-500/10 dark:text-emerald-400 dark:border-emerald-500/20",
+                                    severity === 'needs-improvement' && "bg-amber-100 text-amber-800 border-amber-200 dark:bg-amber-500/10 dark:text-amber-400 dark:border-amber-500/20",
+                                    severity === 'poor' && "bg-red-100 text-red-800 border-red-200 dark:bg-red-500/10 dark:text-red-400 dark:border-red-500/20",
                                 )}>
+                                    <span className={clsx(
+                                        "w-1.5 h-1.5 rounded-full",
+                                        severity === 'good' && "bg-emerald-500",
+                                        severity === 'needs-improvement' && "bg-amber-500",
+                                        severity === 'poor' && "bg-red-500",
+                                    )} />
                                     {severity.replace('-', ' ')}
                                 </span>
                             </div>

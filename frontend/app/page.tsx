@@ -652,11 +652,19 @@ export default function Home() {
             initial={{ opacity: 0 }}
             animate={{ opacity: 1 }}
             transition={{ delay: 1 }}
-            className="flex flex-col items-center gap-2 text-zinc-400 pt-6"
+            data-interactive="true"
+            onClick={() => window.scrollBy({ top: window.innerHeight * 0.8, behavior: 'smooth' })}
+            className="flex flex-col items-center gap-3 pt-6 cursor-pointer group"
           >
-            <span className="text-xs font-medium uppercase tracking-widest">Explore Features</span>
-            <motion.div animate={{ y: [0, 6, 0] }} transition={{ repeat: Infinity, duration: 1.5 }}>
-              <ChevronDown className="w-5 h-5" />
+            <span className="text-xs font-black uppercase tracking-[0.25em] text-zinc-600 dark:text-zinc-300 group-hover:text-blue-500 dark:group-hover:text-blue-400 transition-colors">
+              Explore Features
+            </span>
+            <motion.div
+              animate={{ y: [0, 12, 0], scale: [1, 1.15, 1] }}
+              transition={{ repeat: Infinity, duration: 1.2, ease: [0.34, 1.56, 0.64, 1] }}
+              className="w-9 h-9 rounded-full bg-blue-500/10 border border-blue-500/20 flex items-center justify-center group-hover:bg-blue-500/20 group-hover:border-blue-500/40 transition-colors shadow-sm"
+            >
+              <ChevronDown className="w-4 h-4 text-blue-500 dark:text-blue-400" strokeWidth={3} />
             </motion.div>
           </motion.div>
         </div>

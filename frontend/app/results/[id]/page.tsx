@@ -367,14 +367,21 @@ export default function ResultPage() {
               key={tab.id}
               onClick={() => setActiveTab(tab.id)}
               className={clsx(
-                "flex items-center gap-2 px-4 py-3 text-sm font-medium border-b-2 transition-colors whitespace-nowrap cursor-pointer",
+                "relative flex items-center gap-2 px-4 py-3 text-sm font-medium transition-colors whitespace-nowrap cursor-pointer",
                 activeTab === tab.id
-                  ? "border-blue-500 text-blue-600 dark:text-blue-400"
-                  : "border-transparent text-zinc-500 hover:text-zinc-700 dark:hover:text-zinc-300 hover:border-zinc-300 dark:hover:border-zinc-700"
+                  ? "text-blue-600 dark:text-blue-400"
+                  : "text-zinc-500 hover:text-zinc-700 dark:hover:text-zinc-300"
               )}
             >
               {tab.icon}
               {tab.label}
+              {activeTab === tab.id && (
+                <motion.div
+                  layoutId="results-tab-underline"
+                  className="absolute left-0 right-0 -bottom-px h-0.5 bg-blue-500"
+                  transition={{ type: 'spring', stiffness: 400, damping: 35 }}
+                />
+              )}
             </button>
           ))}
         </div>
