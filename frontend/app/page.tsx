@@ -23,8 +23,21 @@ function RadarCursor() {
   const [rings, setRings] = useState<{ id: number; x: number; y: number }[]>([]);
   const [isHovering, setIsHovering] = useState(false);
   const ringId = useRef(0);
+  const [isMobile, setIsMobile] = useState(true);
 
   useEffect(() => {
+    const mql = window.matchMedia('(pointer: coarse)');
+    const checkMobile = () => {
+      setIsMobile(mql.matches || window.innerWidth < 1024);
+    };
+    
+    checkMobile();
+    window.addEventListener('resize', checkMobile);
+
+    if (mql.matches || window.innerWidth < 1024) {
+      return () => window.removeEventListener('resize', checkMobile);
+    }
+
     const onMove = (e: MouseEvent) => {
       setPos({ x: e.clientX, y: e.clientY });
       const el = document.elementFromPoint(e.clientX, e.clientY);
@@ -37,13 +50,17 @@ function RadarCursor() {
       setRings(r => [...r, { id, x: e.clientX, y: e.clientY }]);
       setTimeout(() => setRings(r => r.filter(ring => ring.id !== id)), 900);
     };
+
     window.addEventListener('mousemove', onMove);
     window.addEventListener('click', onClick);
     return () => {
+      window.removeEventListener('resize', checkMobile);
       window.removeEventListener('mousemove', onMove);
       window.removeEventListener('click', onClick);
     };
   }, []);
+
+  if (isMobile) return null;
 
   return (
     <>
@@ -147,7 +164,7 @@ const features = [
   {
     icon: Zap,
     title: 'Lighthouse Audit',
-    desc: 'Full Lighthouse v12 audit powered by Playwright. Performance, Accessibility, Best Practices, and SEO scores in one click.',
+    desc: 'Full Lighthouse v12 audit. Performance, Accessibility, Best Practices, and SEO scores in one click.',
     color: 'blue',
   },
   {
@@ -171,7 +188,7 @@ const features = [
   {
     icon: PlayCircle,
     title: 'Visual Filmstrip',
-    desc: 'Frame-by-frame loading timeline. See exactly how your page renders as screenshots captured during a live Playwright run.',
+    desc: 'Frame-by-frame loading timeline. See exactly how your page renders with screenshots captured during a live audit.',
     color: 'pink',
   },
   {
@@ -635,11 +652,19 @@ export default function Home() {
             initial={{ opacity: 0 }}
             animate={{ opacity: 1 }}
             transition={{ delay: 1 }}
-            className="flex flex-col items-center gap-2 text-zinc-400 pt-6"
+            data-interactive="true"
+            onClick={() => window.scrollBy({ top: window.innerHeight * 0.8, behavior: 'smooth' })}
+            className="flex flex-col items-center gap-3 pt-6 cursor-pointer group"
           >
-            <span className="text-xs font-medium uppercase tracking-widest">Explore Features</span>
-            <motion.div animate={{ y: [0, 6, 0] }} transition={{ repeat: Infinity, duration: 1.5 }}>
-              <ChevronDown className="w-5 h-5" />
+            <span className="text-xs font-black uppercase tracking-[0.25em] text-zinc-600 dark:text-zinc-300 group-hover:text-blue-500 dark:group-hover:text-blue-400 transition-colors">
+              Explore Features
+            </span>
+            <motion.div
+              animate={{ y: [0, 12, 0], scale: [1, 1.15, 1] }}
+              transition={{ repeat: Infinity, duration: 1.2, ease: [0.34, 1.56, 0.64, 1] }}
+              className="w-9 h-9 rounded-full bg-blue-500/10 border border-blue-500/20 flex items-center justify-center group-hover:bg-blue-500/20 group-hover:border-blue-500/40 transition-colors shadow-sm"
+            >
+              <ChevronDown className="w-4 h-4 text-blue-500 dark:text-blue-400" strokeWidth={3} />
             </motion.div>
           </motion.div>
         </div>
@@ -764,7 +789,7 @@ export default function Home() {
               <div className="flex flex-col items-center gap-6">
                 <p className="text-sm font-bold text-zinc-300">Page Load Filmstrip</p>
                 <FilmstripMockup />
-                <p className="text-xs text-zinc-500">Screenshots captured at 0.5s intervals during Playwright run</p>
+                <p className="text-xs text-zinc-500">Screenshots captured at 0.5s intervals during Lighthouse audit</p>
               </div>
             )}
             {activePreview === 'insights' && (
@@ -829,7 +854,7 @@ export default function Home() {
         <div className="flex items-center justify-center gap-2 mb-2">
           <span className="font-bold text-zinc-600 dark:text-zinc-300 uppercase tracking-widest">Sightline</span>
         </div>
-        Powered by Lighthouse v12, Playwright &amp; Gemini AI
+        Powered by Lighthouse v12, Chrome &amp; Gemini AI
       </footer>
     </div>
   );

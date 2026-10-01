@@ -182,10 +182,23 @@ DEFAULT_AUTO_FIELD = 'django.db.models.BigAutoField'
 
 # Celery Configuration
 CELERY_BROKER_URL = os.environ.get('CELERY_BROKER_URL')
-CELERY_RESULT_BACKEND = os.environ.get('CELERY_RESULT_BACKEND')
+# We do not need the Result Backend because Django DB persists our workflow states
+CELERY_RESULT_BACKEND = None
+CELERY_IGNORE_RESULT = True
 CELERY_ACCEPT_CONTENT = ['application/json']
 CELERY_TASK_SERIALIZER = 'json'
 CELERY_RESULT_SERIALIZER = 'json'
+
+# Disable worker events (which ping Redis heavily)
+CELERY_WORKER_SEND_TASK_EVENTS = False
+CELERY_TASK_TRACK_STARTED = False
+
+# Broker pooling optimization for Upstash limits
+CELERY_BROKER_POOL_LIMIT = 0  # Prevents keeping idle connections open
+CELERY_BROKER_CONNECTION_RETRY_ON_STARTUP = True
+CELERY_BROKER_TRANSPORT_OPTIONS = {
+    'max_connections': 2,
+}
 CELERY_TIMEZONE = TIME_ZONE
 
 import ssl

@@ -2,7 +2,7 @@
 
 import { useEffect, useState } from 'react';
 import { Moon, Sun } from 'lucide-react';
-import { motion } from 'framer-motion';
+import { motion, AnimatePresence } from 'framer-motion';
 
 export default function ThemeToggle({ showLabel = false }: { showLabel?: boolean }) {
     const [mounted, setMounted] = useState(false);
@@ -63,11 +63,22 @@ export default function ThemeToggle({ showLabel = false }: { showLabel?: boolean
                 className="p-2 w-9 h-9 flex items-center justify-center rounded-full bg-zinc-200 dark:bg-zinc-800 text-zinc-800 dark:text-zinc-200 hover:bg-zinc-300 dark:hover:bg-zinc-700 transition-colors focus:outline-none focus:ring-2 focus:ring-blue-500 cursor-pointer"
                 aria-label={`Switch to ${theme === 'dark' ? 'light' : 'dark'} mode`}
             >
-                {theme === 'dark' ? (
-                    <Moon className="w-5 h-5 text-blue-400" />
-                ) : (
-                    <Sun className="w-5 h-5 text-amber-500" />
-                )}
+                <AnimatePresence mode="wait" initial={false}>
+                    <motion.span
+                        key={theme}
+                        initial={{ rotate: -90, opacity: 0, scale: 0.5 }}
+                        animate={{ rotate: 0, opacity: 1, scale: 1 }}
+                        exit={{ rotate: 90, opacity: 0, scale: 0.5 }}
+                        transition={{ duration: 0.25, ease: 'easeInOut' }}
+                        className="flex items-center justify-center"
+                    >
+                        {theme === 'dark' ? (
+                            <Moon className="w-5 h-5 text-blue-400" />
+                        ) : (
+                            <Sun className="w-5 h-5 text-amber-500" />
+                        )}
+                    </motion.span>
+                </AnimatePresence>
             </motion.button>
             
             {showLabel && (

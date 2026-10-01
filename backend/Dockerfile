@@ -6,7 +6,8 @@ RUN apt-get update && apt-get install -y \
     gnupg \
     build-essential \
     libpq-dev \
-    ca-certificates
+    ca-certificates \
+    chromium
 
 # Install Node.js (required for Lighthouse)
 RUN curl -fsSL https://deb.nodesource.com/setup_20.x | bash - \
@@ -21,9 +22,6 @@ WORKDIR /app
 # Install Python dependencies
 COPY requirements.txt .
 RUN pip install --no-cache-dir -r requirements.txt
-
-# Install Playwright browsers
-RUN playwright install --with-deps chromium
 
 # Install Lighthouse globally
 RUN npm install -g lighthouse

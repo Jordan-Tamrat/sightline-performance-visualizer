@@ -9,6 +9,42 @@ interface PerformanceSimulatorProps {
     baseScore: number;
 }
 
+/**
+ * Native <input type="range"> progress-fill styling is inconsistent across browsers
+ * (Chrome/Safari don't reliably paint the "played" portion of the track). We render
+ * the fill ourselves as an absolutely-positioned bar and keep the real <input>
+ * transparent-but-interactive on top, so dragging/keyboard/focus all still work natively.
+ */
+function ForecastSlider({ value, onChange }: { value: number; onChange: (v: number) => void }) {
+    return (
+        <div className="relative h-5 flex items-center touch-none">
+            {/* Track background */}
+            <div className="absolute inset-x-0 h-1.5 rounded-full bg-zinc-150 dark:bg-zinc-800" />
+            {/* Filled progress */}
+            <motion.div
+                className="absolute left-0 h-1.5 rounded-full bg-gradient-to-r from-emerald-500 to-teal-400 shadow-[0_0_10px_rgba(16,185,129,0.4)]"
+                animate={{ width: `${value}%` }}
+                transition={{ type: 'spring', stiffness: 300, damping: 30 }}
+            />
+            {/* Visible thumb marker (decorative, follows the real input) */}
+            <motion.div
+                className="absolute w-4 h-4 rounded-full bg-white dark:bg-zinc-100 border-2 border-emerald-500 shadow-md pointer-events-none"
+                animate={{ left: `calc(${value}% - 8px)` }}
+                transition={{ type: 'spring', stiffness: 300, damping: 30 }}
+            />
+            {/* Real range input: fully transparent but on top, so it stays draggable/keyboard-accessible */}
+            <input
+                type="range"
+                min="0"
+                max="100"
+                value={value}
+                onChange={(e) => onChange(Number(e.target.value))}
+                className="relative w-full h-5 appearance-none bg-transparent cursor-pointer opacity-0 z-10"
+            />
+        </div>
+    );
+}
+
 export default function PerformanceSimulator({ baseScore }: PerformanceSimulatorProps) {
     const [jsReduction, setJsReduction] = useState(0);
     const [imageOptimization, setImageOptimization] = useState(0);
@@ -83,14 +119,7 @@ export default function PerformanceSimulator({ baseScore }: PerformanceSimulator
                             <label className="text-zinc-500 dark:text-zinc-400">Reduce JavaScript Payload (TBT - 30%)</label>
                             <span className="text-emerald-600 dark:text-emerald-400">{jsReduction > 0 ? `-${jsReduction}%` : '0%'}</span>
                         </div>
-                        <input
-                            type="range"
-                            min="0"
-                            max="100"
-                            value={jsReduction}
-                            onChange={(e) => setJsReduction(Number(e.target.value))}
-                            className="w-full h-1.5 bg-zinc-100 dark:bg-zinc-800 rounded-lg appearance-none cursor-pointer accent-emerald-500"
-                        />
+                        <ForecastSlider value={jsReduction} onChange={setJsReduction} />
                     </div>
 
                     {/* Slider 2: Images */}
@@ -99,14 +128,7 @@ export default function PerformanceSimulator({ baseScore }: PerformanceSimulator
                             <label className="text-zinc-500 dark:text-zinc-400">Optimize & Compress Images (LCP - 25%)</label>
                             <span className="text-emerald-600 dark:text-emerald-400">{imageOptimization > 0 ? `-${imageOptimization}%` : '0%'}</span>
                         </div>
-                        <input
-                            type="range"
-                            min="0"
-                            max="100"
-                            value={imageOptimization}
-                            onChange={(e) => setImageOptimization(Number(e.target.value))}
-                            className="w-full h-1.5 bg-zinc-100 dark:bg-zinc-800 rounded-lg appearance-none cursor-pointer accent-emerald-500"
-                        />
+                        <ForecastSlider value={imageOptimization} onChange={setImageOptimization} />
                     </div>
 
                     {/* Slider 3: Server */}
@@ -115,14 +137,7 @@ export default function PerformanceSimulator({ baseScore }: PerformanceSimulator
                             <label className="text-zinc-500 dark:text-zinc-400">Improve Server Response (FCP - 10%)</label>
                             <span className="text-emerald-600 dark:text-emerald-400">{serverResponse > 0 ? `-${serverResponse}%` : '0%'}</span>
                         </div>
-                        <input
-                            type="range"
-                            min="0"
-                            max="100"
-                            value={serverResponse}
-                            onChange={(e) => setServerResponse(Number(e.target.value))}
-                            className="w-full h-1.5 bg-zinc-100 dark:bg-zinc-800 rounded-lg appearance-none cursor-pointer accent-emerald-500"
-                        />
+                        <ForecastSlider value={serverResponse} onChange={setServerResponse} />
                     </div>
                 </div>
             </div>

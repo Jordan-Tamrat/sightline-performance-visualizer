@@ -3,7 +3,6 @@ djangorestframework
 celery
 redis
 psycopg2-binary
-playwright
 google-genai
 gunicorn
 django-cors-headers
@@ -13,3 +12,4 @@ whitenoise
 dj-database-url
 django-storages[s3]
 boto3
+ijson
