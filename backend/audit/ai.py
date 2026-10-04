@@ -1,6 +1,46 @@
 import json
 import os
+import time
 from django.conf import settings
+
+# Gemini free-tier Flash returns 503 UNAVAILABLE under load. These are almost always
+# brief, so a couple of short waits recovers the request without a second Lighthouse run.
+# Deliberately small: each attempt reuses the already-built prompt and holds no extra
+# memory, and the total wait stays short enough not to tie up a web worker thread.
+_RETRY_DELAYS = (2, 5)  # seconds; 3 attempts total
+_RETRY_STATUS = ('503', '429', 'UNAVAILABLE', 'RESOURCE_EXHAUSTED', 'INTERNAL', '500')
+
+def _is_transient(err) -> bool:
+    """True for overload/rate-limit style errors that are worth retrying."""
+    text = str(err).upper()
+    return any(code in text for code in _RETRY_STATUS)
+
+
+def _generate_with_retry(client, prompt):
+    """
+    Call Gemini, retrying only on transient overload errors.
+
+    Takes the already-built prompt so retries never re-parse lighthouse_data —
+    nothing beyond the prompt string is held across attempts. A non-transient
+    error (bad key, bad model, malformed request) raises immediately rather
+    than burning time on waits that cannot help.
+    """
+    last_err = None
+    for attempt in range(len(_RETRY_DELAYS) + 1):
+        try:
+            return client.models.generate_content(
+                model='gemini-2.5-flash',
+                contents=prompt,
+            )
+        except Exception as e:
+            last_err = e
+            if not _is_transient(e) or attempt == len(_RETRY_DELAYS):
+                raise
+            delay = _RETRY_DELAYS[attempt]
+            print(f"Gemini transient error (attempt {attempt + 1}), retrying in {delay}s: {e}", flush=True)
+            time.sleep(delay)
+    raise last_err
+
 
 def generate_ai_summary(lighthouse_data, url):
     """
@@ -98,10 +138,12 @@ def generate_ai_summary(lighthouse_data, url):
             f"Provide RAW JSON only."
         )
         
-        response = client.models.generate_content(
-            model='gemini-2.5-flash',
-            contents=prompt,
-        )
+        # Release the parsed audit structures before the network call. The prompt
+        # string is all the request needs, and retries must not keep the full
+        # lighthouse_json-derived data alive while waiting.
+        del core_metrics, other_failed_findings, core_metrics_json, failed_findings_text, audits
+
+        response = _generate_with_retry(client, prompt)
 
         # Robustly extract JSON object between first { and last }
         text = response.text.strip()
@@ -115,9 +157,18 @@ def generate_ai_summary(lighthouse_data, url):
         return text
     except Exception as e:
         print(f"AI Summary failed: {e}")
-        # Return a fallback JSON structure for UI consistency
+        # Return a fallback JSON structure for UI consistency.
+        # 'retryable' tells the frontend this failure was the AI step alone — the
+        # Lighthouse data is intact, so insights can be regenerated without re-auditing.
         fallback = {
-            "overall_assessment": f"AI Summary unavailable due to error: {str(e)}",
-            "issues": []
+            "overall_assessment": (
+                "AI insights could not be generated because the model was temporarily "
+                "unavailable. Your performance data is complete — use Regenerate to try again."
+                if _is_transient(e)
+                else f"AI Summary unavailable due to error: {str(e)}"
+            ),
+            "issues": [],
+            "error": str(e),
+            "retryable": True,
         }
         return json.dumps(fallback)

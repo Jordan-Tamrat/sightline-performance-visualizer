@@ -11,6 +11,7 @@ from django.http import JsonResponse
 from django.views import View
 import requests
 import os
+import json
 from .models import Report, SharedReport
 from .serializers import ReportSerializer, SharedReportSerializer
 from .tasks import run_audit, cleanup_old_reports, cleanup_expired_shares
@@ -65,41 +66,91 @@ class ReportViewSet(viewsets.ModelViewSet):
         _log_mem("web_cgroup_mem__before_audit_queued")
         run_audit.delay(report.id)
 
+    def _start_ai_thread(self, report_id):
+        """
+        Run the AI summary in a background thread on the web dyno.
+
+        Returns True if a thread was started, False if one is already running for
+        this report. The _ACTIVE_AI_GEN guard keeps concurrent polls (or repeated
+        Regenerate clicks) from launching duplicate generations.
+        """
+        if report_id in _ACTIVE_AI_GEN:
+            return False
+
+        _ACTIVE_AI_GEN.add(report_id)
+        _log_mem("web_cgroup_mem__before_ai_gen_thread")
+
+        def _run_ai_bg(report_id):
+            from .models import Report
+            from django.db import connection
+            try:
+                r = Report.objects.get(id=report_id)
+                res = generate_ai_summary(r.lighthouse_json, r.url)
+                r.ai_summary = res
+                r.status = 'completed'
+                r.save(update_fields=['ai_summary', 'status'])
+            except Exception as e:
+                print(f"Web AI generating thread failed: {e}")
+                try:
+                    r = Report.objects.get(id=report_id)
+                    # Mark retryable so the report stays regenerable instead of being
+                    # stuck with a permanent error message.
+                    r.ai_summary = json.dumps({
+                        "overall_assessment": (
+                            "AI insights could not be generated. Your performance data "
+                            "is complete — use Regenerate to try again."
+                        ),
+                        "issues": [],
+                        "error": str(e),
+                        "retryable": True,
+                    })
+                    r.status = 'completed'
+                    r.save(update_fields=['ai_summary', 'status'])
+                except:
+                    pass
+            finally:
+                _ACTIVE_AI_GEN.discard(report_id)
+                connection.close()
+
+        threading.Thread(target=_run_ai_bg, args=(report_id,)).start()
+        return True
+
     def retrieve(self, request, *args, **kwargs):
         instance = self.get_object()
-        
+
         # Intercept here to run AI dynamically in Web Dyno if Celery finished the Lighthouse audit
         if instance.status == 'processing' and not instance.ai_summary and instance.lighthouse_json:
-            if instance.id not in _ACTIVE_AI_GEN:
-                _ACTIVE_AI_GEN.add(instance.id)
-                _log_mem("web_cgroup_mem__before_ai_gen_thread")
-                
-                def _run_ai_bg(report_id):
-                    from .models import Report
-                    from django.db import connection
-                    try:
-                        r = Report.objects.get(id=report_id)
-                        res = generate_ai_summary(r.lighthouse_json, r.url)
-                        r.ai_summary = res
-                        r.status = 'completed'
-                        r.save(update_fields=['ai_summary', 'status'])
-                    except Exception as e:
-                        print(f"Web AI generating thread failed: {e}")
-                        try:
-                            r = Report.objects.get(id=report_id)
-                            r.ai_summary = "AI Summary generation failed."
-                            r.status = 'completed'
-                            r.save(update_fields=['ai_summary', 'status'])
-                        except:
-                            pass
-                    finally:
-                        _ACTIVE_AI_GEN.discard(report_id)
-                        connection.close()
+            self._start_ai_thread(instance.id)
 
-                threading.Thread(target=_run_ai_bg, args=(instance.id,)).start()
-            
         serializer = self.get_serializer(instance)
         return Response(serializer.data)
+
+    @action(detail=True, methods=['post'])
+    def regenerate_insights(self, request, pk=None):
+        """
+        Re-runs ONLY the AI summary against the stored lighthouse_json.
+
+        No Lighthouse run and no Chrome launch, so this costs one API call rather
+        than one of the user's daily audits, and adds no worker memory pressure.
+        """
+        report = self.get_object()
+
+        if not report.lighthouse_json:
+            return Response(
+                {'error': 'This report has no performance data to analyse.'},
+                status=400,
+            )
+
+        # Clearing the summary makes the frontend's existing poll show the AI step
+        # as in-progress again while the thread works.
+        report.ai_summary = None
+        report.status = 'processing'
+        report.save(update_fields=['ai_summary', 'status'])
+
+        started = self._start_ai_thread(report.id)
+        return Response({
+            'status': 'regenerating' if started else 'already_running',
+        })
 
 
     @action(detail=True, methods=['post'])

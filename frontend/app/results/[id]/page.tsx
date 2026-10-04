@@ -50,6 +50,9 @@ export default function ResultPage() {
   // Tab state
   const [activeTab, setActiveTab] = useState<'overview' | 'ai' | 'network' | 'visuals'>('overview');
 
+  // Regenerate state
+  const [isRegenerating, setIsRegenerating] = useState(false);
+
   const tabs = [
     { id: 'overview', label: 'Overview', icon: <Monitor className="w-4 h-4" /> },
     { id: 'ai', label: 'AI Insights', icon: <Sparkles className="w-4 h-4" /> },
@@ -175,6 +178,30 @@ export default function ResultPage() {
       }
     } finally {
       setIsSharing(false);
+    }
+  };
+
+  const handleRegenerate = async () => {
+    setIsRegenerating(true);
+    try {
+      await axios.post(`${apiUrl}/api/reports/${id}/regenerate_insights/`);
+
+      // The backend clears ai_summary and sets status back to 'processing', but the
+      // main polling effect has already stopped for this report. Poll here until the
+      // new summary lands (or we give up) so the panel updates without a reload.
+      const started = Date.now();
+      while (Date.now() - started < 90000) {
+        await new Promise((r) => setTimeout(r, 3000));
+        const { data } = await axios.get(`${apiUrl}/api/reports/${id}/`);
+        if (data.status === 'completed' || data.status === 'failed') {
+          setReport(data);
+          break;
+        }
+      }
+    } catch (err) {
+      console.error('Failed to regenerate insights', err);
+    } finally {
+      setIsRegenerating(false);
     }
   };
 
@@ -421,9 +448,11 @@ export default function ResultPage() {
                 exit={{ opacity: 0, y: -10 }}
                 transition={{ duration: 0.3 }}
               >
-                <AIInsightsPanel 
-                  aiSummary={report.ai_summary} 
-                  onAction={handleInsightAction} 
+                <AIInsightsPanel
+                  aiSummary={report.ai_summary}
+                  onAction={handleInsightAction}
+                  onRegenerate={handleRegenerate}
+                  isRegenerating={isRegenerating}
                 />
               </motion.div>
             )}

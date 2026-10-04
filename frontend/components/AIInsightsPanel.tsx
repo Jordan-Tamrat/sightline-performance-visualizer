@@ -2,7 +2,7 @@
 
 import React, { useMemo, useState } from 'react';
 import { motion } from 'framer-motion';
-import { Sparkles, LayoutPanelTop, Info, CheckCircle } from 'lucide-react';
+import { Sparkles, LayoutPanelTop, Info, CheckCircle, RefreshCw } from 'lucide-react';
 import clsx from 'clsx';
 import InsightCard, { Insight, InsightAction } from './InsightCard';
 
@@ -11,9 +11,11 @@ type SeverityFilter = 'All' | 'High' | 'Medium' | 'Low';
 interface AIInsightsPanelProps {
   aiSummary: string | null;
   onAction?: (action: InsightAction) => void;
+  onRegenerate?: () => void;
+  isRegenerating?: boolean;
 }
 
-export default function AIInsightsPanel({ aiSummary, onAction }: AIInsightsPanelProps) {
+export default function AIInsightsPanel({ aiSummary, onAction, onRegenerate, isRegenerating }: AIInsightsPanelProps) {
   const [filter, setFilter] = useState<SeverityFilter>('All');
 
   const parsedData = useMemo(() => {
@@ -91,6 +93,19 @@ export default function AIInsightsPanel({ aiSummary, onAction }: AIInsightsPanel
             <p className="text-zinc-700 dark:text-zinc-300 text-lg leading-relaxed max-w-4xl font-medium">
               {overall_assessment}
             </p>
+
+            {/* Shown only when the AI step failed but the Lighthouse data survived,
+                so insights can be retried without spending a new audit. */}
+            {parsedData.retryable && onRegenerate && (
+              <button
+                onClick={onRegenerate}
+                disabled={isRegenerating}
+                className="mt-5 inline-flex items-center gap-2 px-5 py-2.5 rounded-xl bg-indigo-600 hover:bg-indigo-500 text-white text-sm font-bold transition-colors cursor-pointer disabled:opacity-60 disabled:cursor-not-allowed shadow-sm"
+              >
+                <RefreshCw className={clsx("w-4 h-4", isRegenerating && "animate-spin")} />
+                {isRegenerating ? 'Regenerating…' : 'Regenerate Insights'}
+              </button>
+            )}
           </div>
         </div>
         
