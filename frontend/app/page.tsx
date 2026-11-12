@@ -1,5 +1,6 @@
 'use client';
 
+import Script from 'next/script';
 import { useState, useEffect, useRef } from 'react';
 import { useRouter } from 'next/navigation';
 import axios from 'axios';
@@ -519,7 +520,7 @@ export default function Home() {
           >
             <span className="bg-gradient-to-br from-blue-400 via-cyan-400 to-emerald-400 bg-clip-text text-transparent">Sightline</span>
             <br />
-            <span className="text-zinc-800 dark:text-zinc-100 text-4xl sm:text-5xl font-bold">Performance Visualizer</span>
+            <span className="text-zinc-800 dark:text-zinc-100 text-4xl sm:text-5xl font-bold">Free Website Performance Checker</span>
           </motion.h1>
 
           <motion.p
@@ -528,7 +529,7 @@ export default function Home() {
             transition={{ duration: 0.6, delay: 0.2 }}
             className="text-lg text-zinc-500 dark:text-zinc-400 max-w-xl mx-auto leading-relaxed"
           >
-            Paste any URL. Get a full Lighthouse audit, Web Vitals, Network Waterfall, Visual Filmstrip, and AI-powered insights all in one place.
+            Paste any URL into this free website performance checker and get a full Lighthouse audit, Web Vitals, Network Waterfall, Visual Filmstrip, and AI-powered insights all in one place.
           </motion.p>
 
           {/* Audit Form */}
@@ -543,6 +544,7 @@ export default function Home() {
             <div className="flex flex-col sm:flex-row gap-3 justify-center items-center max-w-2xl mx-auto">
               <div className="relative w-full">
                 <input
+                  id="url-input"
                   type="text"
                   placeholder="https://your-website.com"
                   value={url}
@@ -710,7 +712,7 @@ export default function Home() {
           >
             <div className="inline-flex items-center gap-2 px-4 py-2 rounded-full bg-emerald-500/10 border border-emerald-500/20 text-emerald-400 text-xs font-bold uppercase tracking-widest mb-6">
               <Activity className="w-3.5 h-3.5" />
-              Live Preview
+              Example report
             </div>
             <h2 className="text-4xl sm:text-5xl font-black tracking-tight mb-4">
               See What You Get
@@ -828,8 +830,8 @@ export default function Home() {
           </p>
           <div className="flex flex-col sm:flex-row items-center justify-center gap-4">
             <motion.a
-              href="#"
-              onClick={(e) => { e.preventDefault(); window.scrollTo({ top: 0, behavior: 'smooth' }); }}
+              href="#url-input"
+              onClick={(e) => { e.preventDefault(); const el = document.getElementById('url-input'); if (el) { el.scrollIntoView({ behavior: 'smooth', block: 'center' }); el.focus(); } }}
               data-interactive="true"
               whileHover={{ scale: 1.04 }}
               whileTap={{ scale: 0.97 }}
@@ -848,6 +850,24 @@ export default function Home() {
           </div>
         </motion.div>
       </section>
+
+      <Script
+        id="json-ld-software"
+        type="application/ld+json"
+        dangerouslySetInnerHTML={{
+          __html: JSON.stringify({
+            '@context': 'https://schema.org',
+            '@type': 'SoftwareApplication',
+            name: 'Sightline',
+            url: process.env.NEXT_PUBLIC_SITE_URL ?? 'https://www.sightline.page',
+            applicationCategory: 'DeveloperApplication',
+            operatingSystem: 'Web',
+            offers: { '@type': 'Offer', price: '0', priceCurrency: 'USD' },
+            description:
+              'Free website performance checker powered by Lighthouse v12 and Gemini AI. Analyse Web Vitals, Network Waterfall, and get AI-generated insights.',
+          }),
+        }}
+      />
 
       {/* Footer */}
       <footer className="border-t border-zinc-200 dark:border-zinc-800 py-8 px-6 text-center text-xs text-zinc-400">
